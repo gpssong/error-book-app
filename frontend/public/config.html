@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 模型配置</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+      background: #F8FAFC;
+      color: #1E293B;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 20px 16px 40px;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+    .subtitle {
+      color: #64748B;
+      font-size: 13px;
+      margin-bottom: 24px;
+    }
+
+    /* Card */
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      border: 1px solid #E2E8F0;
+    }
+    .card-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #334155;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-title .icon { font-size: 18px; }
+
+    /* Form elements */
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #64748B;
+      margin-bottom: 6px;
+    }
+    input[type="text"], input[type="password"], select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1.5px solid #E2E8F0;
+      border-radius: 10px;
+      font-size: 14px;
+      font-family: inherit;
+      color: #1E293B;
+      background: #F8FAFC;
+      transition: border-color 0.15s, background 0.15s;
+      outline: none;
+    }
+    input:focus, select:focus {
+      border-color: #2563EB;
+      background: white;
+    }
+    .input-row {
+      display: flex;
+      gap: 10px;
+    }
+    .input-row > * { flex: 1; }
+
+    /* Model selector */
+    .model-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .model-option {
+      position: relative;
+    }
+    .model-option input { display: none; }
+    .model-option label {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 12px 8px;
+      border: 2px solid #E2E8F0;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+      background: #F8FAFC;
+      text-align: center;
+      margin-bottom: 0;
+    }
+    .model-option label:hover {
+      border-color: #BFDBFE;
+      background: #EFF6FF;
+    }
+    .model-option input:checked + label {
+      border-color: #2563EB;
+      background: #EFF6FF;
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+    }
+    .model-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: #1E293B;
+    }
+    .model-desc {
+      font-size: 10px;
+      color: #64748B;
+    }
+    .model-badge {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: #2563EB;
+      color: white;
+    }
+    .model-badge.vision { background: #7C3AED; }
+    .model-badge.recommended { background: #10B981; }
+
+    /* Test button */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s;
+      width: 100%;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary {
+      background: linear-gradient(135deg, #2563EB, #7C3AED);
+      color: white;
+    }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-secondary {
+      background: #F1F5F9;
+      color: #475569;
+      border: 1.5px solid #E2E8F0;
+    }
+    .btn-secondary:hover { background: #E2E8F0; }
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .btn-group .btn { flex: 1; }
+
+    /* Status messages */
+    .status {
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-top: 12px;
+      display: none;
+    }
+    .status.show { display: block; }
+    .status.success { background: #ECFDF5; color: #065F46; border: 1px solid #A7F3D0; }
+    .status.error   { background: #FEF2F2; color: #991B1B; border: 1px solid #FECACA; }
+    .status.info    { background: #EFF6FF; color: #1E40AF; border: 1px solid #BFDBFE; }
+
+    /* Test image area */
+    .test-area {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #F1F5F9;
+    }
+    .upload-box {
+      border: 2px dashed #E2E8F0;
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.15s;
+      color: #94A3B8;
+    }
+    .upload-box:hover {
+      border-color: #2563EB;
+      color: #2563EB;
+      background: #EFF6FF;
+    }
+    .upload-box.has-image {
+      padding: 8px;
+      border-style: solid;
+      border-color: #10B981;
+    }
+    .upload-icon { font-size: 28px; margin-bottom: 8px; }
+    .upload-text { font-size: 13px; font-weight: 600; }
+    .upload-hint { font-size: 11px; color: #94A3B8; margin-top: 4px; }
+    .preview-img {
+      max-width: 100%;
+      max-height: 200px;
+      border-radius: 8px;
+      display: block;
+      margin: 0 auto;
+    }
+    #fileInput { display: none; }
+
+    /* Result area */
+    .result-box {
+      margin-top: 12px;
+      padding: 14px;
+      background: #F8FAFC;
+      border-radius: 10px;
+      border: 1px solid #E2E8F0;
+      font-size: 13px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-all;
+      display: none;
+    }
+    .result-box.show { display: block; }
+    .result-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: #64748B;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .result-field {
+      margin-bottom: 10px;
+    }
+    .result-field:last-child { margin-bottom: 0; }
+    .result-field-name {
+      font-size: 10px;
+      font-weight: 700;
+      color: #2563EB;
+      margin-bottom: 2px;
+    }
+
+    /* Settings row */
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid #F1F5F9;
+    }
+    .setting-row:last-child { border-bottom: none; }
+    .setting-info {
+      flex: 1;
+    }
+    .setting-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #334155;
+    }
+    .setting-desc {
+      font-size: 11px;
+      color: #94A3B8;
+      margin-top: 2px;
+    }
+    .toggle {
+      width: 44px;
+      height: 24px;
+      background: #CBD5E1;
+      border-radius: 12px;
+      position: relative;
+      cursor: pointer;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    .toggle.on { background: #2563EB; }
+    .toggle::after {
+      content: '';
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      background: white;
+      border-radius: 50%;
+      top: 2px;
+      left: 2px;
+      transition: transform 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .toggle.on::after { transform: translateX(20px); }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 20px;
+      font-size: 11px;
+      color: #94A3B8;
+    }
+    .footer a { color: #2563EB; text-decoration: none; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>🤖 AI 模型配置</h1>
+  <p class="subtitle">选择 OCR 和文本分析使用的模型，实时测试效果</p>
+
+  <!-- Connection Settings -->
+  <div class="card">
+    <div class="card-title"><span class="icon">🔗</span> 连接设置</div>
+    <label>API Base URL</label>
+    <input type="text" id="apiBase" value="https://apihub.agnes-ai.com/v1" placeholder="https://apihub.agnes-ai.com/v1" />
+    <div style="height:10px"></div>
+    <label>API Key</label>
+    <input type="password" id="apiKey" value="sk-efc0YTFoq52xCcEyAuisZWhVPJfToY6kGn9v9mJR4u8Cuwsl" placeholder="输入 API Key" />
+    <div style="height:10px"></div>
+    <button class="btn btn-secondary" onclick="testConnection()" id="testConnBtn">
+      🔌 测试连接
+    </button>
+    <div class="status" id="connStatus"></div>
+  </div>
+
+  <!-- Model Selection -->
+  <div class="card">
+    <div class="card-title"><span class="icon">🧠</span> 模型选择</div>
+
+    <label style="margin-bottom:10px">OCR 识别模型（Vision）</label>
+    <div class="model-grid" id="ocrModels"></div>
+    <div style="height:14px"></div>
+
+    <label style="margin-bottom:10px">AI 讲解模型（文本）</label>
+    <div class="model-grid" id="textModels"></div>
+  </div>
+
+  <!-- Advanced Settings -->
+  <div class="card">
+    <div class="card-title"><span class="icon">⚙️</span> 高级设置</div>
+    <div class="setting-row">
+      <div class="setting-info">
+        <div class="setting-label">启用缓存</div>
+        <div class="setting-desc">缓存请求结果，加速重复测试</div>
+      </div>
+      <div class="toggle on" id="toggleCache" onclick="toggleSetting(this)"></div>
+    </div>
+    <div class="setting-row">
+      <div class="setting-info">
+        <div class="setting-label">显示原始响应</div>
+        <div class="setting-desc">调试时查看模型完整输出</div>
+      </div>
+      <div class="toggle" id="toggleRaw" onclick="toggleSetting(this)"></div>
+    </div>
+    <div style="height:10px"></div>
+    <label>最大 tokens</label>
+    <select id="maxTokens">
+      <option value="100">100（快速）</option>
+      <option value="200" selected>200（推荐）</option>
+      <option value="500">500（详细）</option>
+      <option value="1000">1000（完整）</option>
+    </select>
+  </div>
+
+  <!-- Test Area -->
+  <div class="card">
+    <div class="card-title"><span class="icon">🧪</span> 实时测试</div>
+    <label>上传测试图片</label>
+    <div class="upload-box" id="uploadBox" onclick="document.getElementById('fileInput').click()">
+      <div id="uploadContent">
+        <div class="upload-icon">📷</div>
+        <div class="upload-text">点击上传图片或拖拽到此处</div>
+        <div class="upload-hint">支持 JPG、PNG，最大 10MB</div>
+      </div>
+    </div>
+    <input type="file" id="fileInput" accept="image/*" onchange="handleFileSelect(event)" />
+
+    <div class="btn-group" style="margin-top:14px">
+      <button class="btn btn-primary" onclick="testOCR()" id="ocrTestBtn">🔍 OCR 识别</button>
+      <button class="btn btn-secondary" onclick="testChat()" id="chatTestBtn">💬 文本测试</button>
+    </div>
+
+    <div class="result-box" id="ocrResult"></div>
+    <div class="result-box" id="chatResult"></div>
+    <div class="status" id="testStatus"></div>
+  </div>
+
+  <div class="footer">
+    配置会自动保存到浏览器本地 Storage<br>
+    <a href="#" onclick="clearConfig(); return false;">清除所有配置</a>
+  </div>
+</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+let selectedOcrModel = localStorage.getItem('ocr_model') || 'agnes-2.5-pro-alpha'
+let selectedTextModel = localStorage.getItem('text_model') || 'agnes-2.5-flash'
+let currentImageBase64 = ''
+let modelCache = {}
+
+const ALL_MODELS = [
+  { id: 'agnes-2.5-flash',            desc: '快速对话',          vision: true,  recommended: true },
+  { id: 'agnes-2.5-pro-alpha',        desc: '精准识别',          vision: true,  recommended: false, badge: 'vision' },
+  { id: 'agnes-2.0-flash',            desc: '标准对话',          vision: true,  recommended: false },
+  { id: 'agnes-image-2.5-flash',      desc: '图片生成',          vision: false, recommended: false, badge: 'image' },
+  { id: 'agnes-image-2.0-flash',      desc: '图片生成 v2',       vision: false, recommended: false, badge: 'image' },
+  { id: 'agnes-image-2.1-flash',      desc: '图片生成 v3',       vision: false, recommended: false, badge: 'image' },
+  { id: 'agnes-video-2.5-flash',      desc: '视频理解',          vision: false, recommended: false, badge: 'video' },
+  { id: 'agnes-video-2.5',            desc: '视频理解 pro',      vision: false, recommended: false, badge: 'video' },
+  { id: 'agnes-video-v2.0',           desc: '视频理解 v2',       vision: false, recommended: false, badge: 'video' },
+]
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+function init() {
+  renderModelGrid('ocrModels', true)
+  renderModelGrid('textModels', false)
+  loadConfig()
+}
+
+function renderModelGrid(containerId, isVision) {
+  const container = document.getElementById(containerId)
+  const models = ALL_MODELS.filter(m => isVision ? m.vision : !m.badge || m.badge === 'image')
+  // For text models, exclude image/video specific ones
+  const textModels = ALL_MODELS.filter(m => m.vision && !m.badge)
+
+  const list = isVision ? models : textModels
+
+  container.innerHTML = list.map(m => `
+    <div class="model-option">
+      <input type="radio" name="${containerId}" id="${m.id}" value="${m.id}"
+        ${isVision ? (m.id === selectedOcrModel ? 'checked' : '') : (m.id === selectedTextModel ? 'checked' : '')}
+        onchange="selectModel('${containerId}', '${m.id}')" />
+      <label for="${m.id}">
+        <span class="model-name">${m.id.replace('agnes-', '').replace(/-/g, '.')}</span>
+        <span class="model-desc">${m.desc}</span>
+        ${m.recommended ? '<span class="model-badge recommended">推荐</span>' : ''}
+        ${m.badge === 'vision' ? '<span class="model-badge vision">Vision</span>' : ''}
+      </label>
+    </div>
+  `).join('')
+}
+
+function selectModel(containerId, modelId) {
+  if (containerId === 'ocrModels') {
+    selectedOcrModel = modelId
+    localStorage.setItem('ocr_model', modelId)
+  } else {
+    selectedTextModel = modelId
+    localStorage.setItem('text_model', modelId)
+  }
+  showStatus('testStatus', `已选择 ${modelId}`, 'info')
+}
+
+function loadConfig() {
+  const apiBase = localStorage.getItem('api_base')
+  const apiKey = localStorage.getItem('api_key')
+  if (apiBase) document.getElementById('apiBase').value = apiBase
+  if (apiKey) document.getElementById('apiKey').value = apiKey
+}
+
+function saveConfig() {
+  localStorage.setItem('api_base', document.getElementById('apiBase').value)
+  localStorage.setItem('api_key', document.getElementById('apiKey').value)
+  localStorage.setItem('ocr_model', selectedOcrModel)
+  localStorage.setItem('text_model', selectedTextModel)
+}
+
+// ─── Connection Test ─────────────────────────────────────────────────────────
+async function testConnection() {
+  const btn = document.getElementById('testConnBtn')
+  btn.disabled = true
+  btn.textContent = '⏳ 连接中...'
+  saveConfig()
+
+  try {
+    const resp = await fetch(`${getApiBase()}/models`, {
+      headers: { 'Authorization': `Bearer ${getApiKey()}` }
+    })
+    if (resp.ok) {
+      const data = await resp.json()
+      const count = data.data?.length || 0
+      showStatus('connStatus', `✅ 连接成功！找到 ${count} 个可用模型`, 'success')
+    } else {
+      showStatus('connStatus', `❌ HTTP ${resp.status}: ${(await resp.json()).error?.message || '未知错误'}`, 'error')
+    }
+  } catch (e) {
+    showStatus('connStatus', `❌ 网络错误: ${e.message}`, 'error')
+  } finally {
+    btn.disabled = false
+    btn.textContent = '🔌 测试连接'
+  }
+}
+
+// ─── Image Upload ────────────────────────────────────────────────────────────
+function handleFileSelect(e) {
+  const file = e.target.files[0]
+  if (!file) return
+  processImage(file)
+}
+
+// Drag & drop
+const uploadBox = document.getElementById('uploadBox')
+uploadBox.addEventListener('dragover', e => { e.preventDefault(); uploadBox.style.borderColor = '#2563EB' })
+uploadBox.addEventListener('dragleave', () => { uploadBox.style.borderColor = '' })
+uploadBox.addEventListener('drop', e => {
+  e.preventDefault()
+  uploadBox.style.borderColor = ''
+  if (e.dataTransfer.files[0]) processImage(e.dataTransfer.files[0])
+})
+
+function processImage(file) {
+  if (!file.type.startsWith('image/')) {
+    showStatus('testStatus', '❌ 请上传图片文件', 'error')
+    return
+  }
+  const reader = new FileReader()
+  reader.onload = e => {
+    currentImageBase64 = e.target.result
+    // Show preview
+    document.getElementById('uploadContent').innerHTML = `<img src="${currentImageBase64}" class="preview-img" />`
+    uploadBox.classList.add('has-image')
+    showStatus('testStatus', `✅ 图片已加载 (${(file.size / 1024).toFixed(0)}KB)`, 'success')
+  }
+  reader.readAsDataURL(file)
+}
+
+// ─── OCR Test ────────────────────────────────────────────────────────────────
+async function testOCR() {
+  if (!currentImageBase64) {
+    showStatus('testStatus', '❌ 请先上传测试图片', 'error')
+    return
+  }
+
+  const btn = document.getElementById('ocrTestBtn')
+  btn.disabled = true
+  btn.textContent = '⏳ 识别中...'
+  saveConfig()
+
+  const prompt = `你是一位专业的数学老师，擅长OCR识别理科题目。请识别图片中的题目，提取：
+1. title: 简短题目标题（如"二次函数顶点坐标求解"）
+2. knowledgePoint: 核心知识点（如"二次函数"）
+3. textContent: 完整题目文字（保留数学符号如 x²、≥ 等）
+
+只返回JSON，不要有其他文字：
+{
+  "title": "题目标题",
+  "knowledgePoint": "知识点",
+  "textContent": "完整题目文字"
+}`
+
+  try {
+    const result = await callVisionAPI(selectedOcrModel, prompt, currentImageBase64)
+    displayOCRResult(result)
+  } catch (e) {
+    showStatus('testStatus', `❌ ${e.message}`, 'error')
+  } finally {
+    btn.disabled = false
+    btn.textContent = '🔍 OCR 识别'
+  }
+}
+
+async function callVisionAPI(model, prompt, imageBase64) {
+  const cacheKey = `${model}_${prompt.slice(0, 20)}`
+  if (document.getElementById('toggleCache').classList.contains('on') && modelCache[cacheKey]) {
+    return modelCache[cacheKey]
+  }
+
+  const resp = await fetch(`${getApiBase()}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${getApiKey()}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: imageBase64 } },
+      ]}],
+      max_tokens: parseInt(document.getElementById('maxTokens').value),
+    }),
+  })
+
+  if (!resp.ok) {
+    const err = await resp.json()
+    throw new Error(err.error?.message || `HTTP ${resp.status}`)
+  }
+
+  const data = await resp.json()
+  const result = data.choices?.[0]?.message?.content?.trim() || ''
+
+  // Cache
+  if (document.getElementById('toggleCache').classList.contains('on')) {
+    modelCache[cacheKey] = result
+  }
+
+  return result
+}
+
+function displayOCRResult(text) {
+  const resultBox = document.getElementById('ocrResult')
+  const showRaw = document.getElementById('toggleRaw').classList.contains('on')
+
+  // Try to parse JSON
+  let parsed = null
+  try { parsed = JSON.parse(text) } catch {}
+  if (!parsed) {
+    // Extract from markdown code block
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
+    if (fenced) { try { parsed = JSON.parse(fenced[1]) } catch {} }
+  }
+  if (!parsed) {
+    // Extract from braces
+    let depth = 0
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === '{') { depth = i === 0 ? 1 : depth + 1 }
+      else if (text[i] === '}') { depth-- }
+      if (depth === 0 && i > 0) {
+        try { parsed = JSON.parse(text.slice(0, i + 1)) } catch {}
+        break
+      }
+    }
+  }
+
+  let html = ''
+  if (parsed) {
+    html += `<div class="result-field"><div class="result-field-name">📋 题目标题</div>${escHtml(parsed.title || '-')}</div>`
+    html += `<div class="result-field"><div class="result-field-name">📌 知识点</div>${escHtml(parsed.knowledgePoint || '-')}</div>`
+    html += `<div class="result-field"><div class="result-field-name">📝 题目内容</div>${escHtml(parsed.textContent || '-')}</div>`
+  } else {
+    html += `<div class="result-field"><div class="result-field-name">原始响应</div>${escHtml(text.slice(0, 500))}</div>`
+  }
+
+  if (showRaw) {
+    html += `<div class="result-field"><div class="result-field-name">🔧 原始输出（${selectedOcrModel}）</div><pre style="font-size:11px;color:#64748B;white-space:pre-wrap">${escHtml(text)}</pre></div>`
+  }
+
+  resultBox.innerHTML = html
+  resultBox.classList.add('show')
+  showStatus('testStatus', '✅ OCR 识别完成', 'success')
+}
+
+// ─── Chat Test ───────────────────────────────────────────────────────────────
+async function testChat() {
+  const btn = document.getElementById('chatTestBtn')
+  btn.disabled = true
+  btn.textContent = '⏳ 思考中...'
+  saveConfig()
+
+  try {
+    const text = await callVisionAPI(selectedTextModel, '你好，请用一句话介绍你自己', null)
+    const resultBox = document.getElementById('chatResult')
+    resultBox.innerHTML = `<div class="result-field"><div class="result-field-name">💬 ${selectedTextModel} 回复</div>${escHtml(text)}</div>`
+    resultBox.classList.add('show')
+    showStatus('testStatus', '✅ 文本测试完成', 'success')
+  } catch (e) {
+    showStatus('testStatus', `❌ ${e.message}`, 'error')
+  } finally {
+    btn.disabled = false
+    btn.textContent = '💬 文本测试'
+  }
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function getApiBase() {
+  return document.getElementById('apiBase').value.replace(/\/$/, '')
+}
+function getApiKey() {
+  return document.getElementById('apiKey').value
+}
+function showStatus(id, msg, type) {
+  const el = document.getElementById(id)
+  el.textContent = msg
+  el.className = `status show ${type}`
+  if (type === 'success') setTimeout(() => el.classList.remove('show'), 5000)
+}
+function toggleSetting(el) {
+  el.classList.toggle('on')
+}
+function clearConfig() {
+  if (!confirm('确定清除所有配置？')) return
+  localStorage.clear()
+  location.reload()
+}
+function escHtml(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+// ─── Start ───────────────────────────────────────────────────────────────────
+init()
+</script>
+</body>
+</html>

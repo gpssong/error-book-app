@@ -1,0 +1,13 @@
+{
+  "appId": "com.errorbook.app",
+  "appName": "错题本",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true,
+    "webContentsDebuggingEnabled": true
+  }
+}

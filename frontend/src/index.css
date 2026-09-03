@@ -1,0 +1,85 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap');
+@import 'tailwindcss';
+
+html,
+body {
+  height: 100%;
+  background: #E2E8F0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+}
+
+#root {
+  width: 375px;
+  height: 812px;
+  overflow: hidden;
+  border-radius: 40px;
+  box-shadow: 0 32px 80px rgba(0,0,0,0.25), 0 0 0 8px #1E293B;
+  position: relative;
+  font-family: 'Nunito', sans-serif;
+}
+
+@media (max-height: 900px) {
+  #root {
+    height: 100vh;
+    border-radius: 0;
+    box-shadow: none;
+    width: 100%;
+    max-width: 375px;
+  }
+}
+
+/* Capacitor / WebView 全屏适配：充满整个屏幕 - 双 class 提高优先级 */
+body.is-webview {
+  display: block !important;
+  align-items: stretch !important;
+  justify-content: stretch !important;
+  background: #F8FAFC !important;
+  height: 100% !important;
+}
+body.is-webview #root {
+  width: 100vw !important;
+  max-width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  overflow: hidden;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::-webkit-scrollbar { display: none; }
+* { scrollbar-width: none; }
+
+@theme inline {
+  --color-primary: #2563EB;
+  --color-primary-light: #EFF6FF;
+  --color-orange: #F97316;
+  --color-orange-light: #FFF7ED;
+  --color-surface: #F8FAFC;
+  --color-card: #FFFFFF;
+  --color-border: #E2E8F0;
+  --color-text: #0F172A;
+  --color-muted: #64748B;
+  --color-success: #10B981;
+  --color-danger: #EF4444;
+}
+
+/* 打印样式 */
+@media print {
+  #root {
+    width: 100%;
+    height: auto;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
