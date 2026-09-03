@@ -4,7 +4,13 @@
   "webDir": "www",
   "server": {
     "androidScheme": "https",
-    "cleartext": true
+    "cleartext": true,
+    "url": "http://error.93gushi.com:4040",
+    "allowNavigation": [
+      "error.93gushi.com",
+      "192.168.0.14",
+      "localhost"
+    ]
   },
   "android": {
     "allowMixedContent": true,

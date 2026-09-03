@@ -23,6 +23,8 @@ export const childSchema = new mongoose.Schema(
     errorCount: { type: Number, default: 0 },
     masteredCount: { type: Number, default: 0 },
     weeklyCount: { type: Number, default: 0 },
+    /** 所属家长账号 ID（用于数据隔离） */
+    ownerId: { type: String, required: true, index: true },
   },
   { timestamps: true }
 )
@@ -47,6 +49,7 @@ export function createMemoryChild(payload) {
     errorCount: 0,
     masteredCount: 0,
     weeklyCount: 0,
+    ownerId: payload.ownerId || '',
     createdAt: new Date().toISOString(),
   }
 }

@@ -1,17 +1,25 @@
 /**
  * API 层 - 封装所有后端接口调用
  * 自动检测运行环境：本地开发、内网 WebView、外网域名访问
+ *
+ * 自动注入 Authorization: Bearer <token>
+ * 401 响应时自动清除 token 并触发登录页跳转
  */
+import { auth, emitAuthRequired } from './auth'
+
 function getApiBase(): string {
   // 优先使用环境变量
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
   // 如果是 Capacitor WebView（file:// 或 capacitor:// 协议）
   const protocol = window.location.protocol
-  if (protocol === 'file:' || protocol === 'capacitor:') return 'http://192.168.0.14:3001'
+  if (protocol === 'file:' || protocol === 'capacitor:') {
+    // 容器内直连外网域名（手机 4G 也能访问）
+    return 'http://error.93gushi.com:4040'
+  }
   // 如果在服务器上通过 nginx 访问
   const host = window.location.hostname
   if (host === 'error.93gushi.com') return `http://${host}:4040`
-  // 默认内网地址
+  // 默认内网地址（开发调试）
   return 'http://192.168.0.14:3001'
 }
 const BASE_URL = getApiBase()
@@ -70,10 +78,23 @@ export interface AIAnalysisResult {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${BASE_URL}/api${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  })
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string> | undefined),
+  }
+  const token = auth.getToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${BASE_URL}/api${path}`, { ...options, headers })
+
+  // 401 → token 失效或未登录，跳登录页
+  if (res.status === 401) {
+    auth.clear()
+    const err = await res.json().catch(() => ({ error: '未登录' }))
+    emitAuthRequired()
+    throw new Error(err.error || '请先登录')
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error || `HTTP ${res.status}`)
@@ -120,6 +141,39 @@ const api = {
   // ─── 题目 OCR 识别 ───────────────────────────────────────────────────────────
   recognizeQuestion: (data: { imageBase64: string; subject?: string }) =>
     request<{ title: string; knowledgePoint: string; textContent: string }>('/ocr', { method: 'POST', body: JSON.stringify(data) }),
+
+  // ─── 认证 ─────────────────────────────────────────────────────────────────────
+  // 注意：register/login 不走统一的 request()（不带 token，且 200 而非 401 处理）
+  auth: {
+    async register(data: { username: string; email: string; password: string; displayName?: string }) {
+      const res = await fetch(`${BASE_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body.error || '注册失败')
+      return body as { token: string; user: { id: string; username: string; email: string; displayName: string } }
+    },
+    async login(data: { account: string; password: string }) {
+      const res = await fetch(`${BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body.error || '登录失败')
+      return body as { token: string; user: { id: string; username: string; email: string; displayName: string } }
+    },
+    async me() {
+      const token = auth.getToken()
+      const res = await fetch(`${BASE_URL}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('未登录')
+      return res.json() as Promise<{ id: string; username: string; email: string; displayName: string }>
+    },
+  },
 }
 
 export default api

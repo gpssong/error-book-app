@@ -5,6 +5,13 @@
  *  - 在图片上手写批注（独立手绘图层）
  *  - 清除手写内容（不破坏原图）
  *  - AI 识别并录入错题
+ *
+ * 新增：AI 识别前自动做图片预处理
+ *  - 去白边
+ *  - 灰度增强
+ *  - 去手写（连通域分析）
+ *  - EXIF 自动旋转
+ *  显著提升 OCR 准确率
  */
 import React, { useState, useRef } from 'react'
 import { useApp } from '@/stores/AppContext'
@@ -12,6 +19,7 @@ import { Icon } from '@/components/Icons'
 import DrawingCanvas from '@/components/DrawingCanvas'
 import type { Subject } from '@/stores/api'
 import api from '@/stores/api'
+import { preprocessImage } from '@/utils/imagePreprocess'
 
 type Screen = 'dashboard' | 'childManage' | 'errorList' | 'errorDetail' | 'printPreview' | 'camera'
 type Phase = 'viewfinder' | 'annotating' | 'captured' | 'recognizing' | 'result'
@@ -73,7 +81,25 @@ export default function CameraScreen({ onNavigate }: Props) {
 
     try {
       // 使用标注后的图片进行 OCR
-      const imageBase64 = recognizedImageBase64 || capturedImageUrl
+      let imageBase64 = recognizedImageBase64 || capturedImageUrl
+
+      // ⚙️ OCR 前置预处理：去白边 / 去手写 / 灰度增强
+      // 注：标注过的图片不再去手写（避免把有用笔迹涂掉），但仍去白边 + 灰度增强
+      const hasHandwriting = !!existingHandwritingSvg
+      try {
+        console.log('[OCR] 开始图片预处理…', { hasHandwriting })
+        imageBase64 = await preprocessImage(imageBase64, {
+          removeHandwriting: !hasHandwriting,
+          maxDim: 1600,
+          margin: 12,
+          inkThreshold: 230,
+          inkBlobMaxArea: 80,
+        })
+        console.log('[OCR] 预处理完成')
+      } catch (preErr) {
+        console.warn('[OCR] 预处理失败，使用原图:', preErr)
+      }
+
       const result = await api.recognizeQuestion({ imageBase64, subject: recognizeSubject })
 
       clearInterval(progressTimer)

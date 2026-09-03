@@ -21,6 +21,7 @@ import errorQuestionRoutes from './routes/errorQuestion.js'
 import aiRoutes from './routes/ai.js'
 import uploadRoutes from './routes/upload.js'
 import ocrRoutes from './routes/ocr.js'
+import authRoutes from './routes/auth.js'
 import { connectDB } from './schemas/db.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -34,11 +35,14 @@ app.use(express.urlencoded({ extended: true }))
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')))
 
 // ─── Routes ────────────────────────────────────────────────────────────────────
-app.use('/api/children', childRoutes)
-app.use('/api/errors', errorQuestionRoutes)
-app.use('/api/ai', aiRoutes)
+// 公开接口（无需登录）
+app.use('/api/auth', authRoutes)
+app.use('/api/ai', aiRoutes)         // AI 接口本身无敏感数据，可公开
 app.use('/api/upload', uploadRoutes)
 app.use('/api/ocr', ocrRoutes)
+// 受保护接口（需要 JWT）
+app.use('/api/children', childRoutes)
+app.use('/api/errors', errorQuestionRoutes)
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

@@ -1,8 +1,14 @@
 /**
  * App.tsx - 主应用入口
  * 整合所有屏幕组件，处理路由和状态管理
+ *
+ * 启动流程：
+ * 1. 检查 localStorage 有无 token
+ *    - 有 → 加载数据进入主界面
+ *    - 无 → 显示登录/注册页
+ * 2. 任意 API 返回 401 时,通过 emitAuthRequired 自动跳回登录页
  */
-import React, { useState, useMemo } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { AppProvider, useApp } from './stores/AppContext'
 import DashboardScreen from './components/DashboardScreen'
 import ErrorListScreen from './components/ErrorListScreen'
@@ -10,15 +16,46 @@ import ErrorDetailScreen from './components/ErrorDetailScreen'
 import ChildManageScreen from './components/ChildManageScreen'
 import PrintPreviewScreen from './components/PrintPreviewScreen'
 import CameraScreen from './components/CameraScreen'
+import LoginScreen from './components/LoginScreen'
+import RegisterScreen from './components/RegisterScreen'
 import { Icon } from './components/Icons'
+import { auth, AUTH_EVENT } from './stores/auth'
 
 type Screen = 'dashboard' | 'childManage' | 'errorList' | 'errorDetail' | 'printPreview' | 'camera'
+type AuthScreen = 'login' | 'register'
 
 function AppContent() {
   const { children, activeChildId, activeChild } = useApp()
   const [screen, setScreen] = useState<Screen>('dashboard')
   const [selectedErrorId, setSelectedErrorId] = useState<string | null>(null)
   const [navActive, setNavActive] = useState<'home' | 'list' | 'ai' | 'profile'>('home')
+
+  // 登录状态
+  const [loggedIn, setLoggedIn] = useState(auth.isLoggedIn())
+  const [authScreen, setAuthScreen] = useState<AuthScreen>('login')
+
+  // 监听 401 事件，自动跳登录页
+  useEffect(() => {
+    const handler = () => {
+      setLoggedIn(false)
+      setAuthScreen('login')
+    }
+    window.addEventListener(AUTH_EVENT, handler)
+    return () => window.removeEventListener(AUTH_EVENT, handler)
+  }, [])
+
+  const handleLoginSuccess = () => setLoggedIn(true)
+  const handleGotoRegister = () => setAuthScreen('register')
+  const handleGotoLogin = () => setAuthScreen('login')
+
+  // 未登录：渲染登录/注册
+  if (!loggedIn) {
+    return authScreen === 'login' ? (
+      <LoginScreen onSuccess={handleLoginSuccess} onGotoRegister={handleGotoRegister} />
+    ) : (
+      <RegisterScreen onSuccess={handleLoginSuccess} onGotoLogin={handleGotoLogin} />
+    )
+  }
 
   const goTo = (s: Screen, errorId?: string) => {
     if (errorId) setSelectedErrorId(errorId)
