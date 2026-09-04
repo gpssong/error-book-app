@@ -139,8 +139,24 @@ const api = {
     request<{ url: string }>('/upload/base64', { method: 'POST', body: JSON.stringify(data) }),
 
   // ─── 题目 OCR 识别 ───────────────────────────────────────────────────────────
-  recognizeQuestion: (data: { imageBase64: string; subject?: string }) =>
-    request<{ title: string; knowledgePoint: string; textContent: string }>('/ocr', { method: 'POST', body: JSON.stringify(data) }),
+  recognizeQuestion: (data: { imageBase64: string; subject?: string }) => {
+    // 若 localStorage 里有当前 OCR 用的 TextIn key,自动附带给后端
+    const extraHeaders: Record<string, string> = {}
+    try {
+      const raw = localStorage.getItem('eb_keys')
+      const list = raw ? JSON.parse(raw) as Array<any> : []
+      const textin = list.find((k) => k.category === 'ocr' && k.provider === 'textin' && k.current && k.enabled)
+      if (textin && textin.appId && textin.secretCode) {
+        extraHeaders['X-TextIn-App-Id'] = textin.appId
+        extraHeaders['X-TextIn-Secret-Code'] = textin.secretCode
+      }
+    } catch { /* localStorage 不可用时忽略 */ }
+    return request<{ title: string; knowledgePoint: string; textContent: string }>('/ocr', {
+      method: 'POST',
+      headers: extraHeaders,
+      body: JSON.stringify(data),
+    })
+  },
 
   // ─── 认证 ─────────────────────────────────────────────────────────────────────
   // 注意：register/login 不走统一的 request()（不带 token，且 200 而非 401 处理）

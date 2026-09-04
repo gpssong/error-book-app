@@ -10,22 +10,35 @@
  * 接入流程:
  * 1. https://www.textin.com 注册开发者账号
  * 2. 工作台 → 账号设置 → 开发者信息 获取 x-ti-app-id / x-ti-secret-code
- * 3. 写入 .env: TEXTIN_APP_ID / TEXTIN_SECRET_CODE
+ * 3. 配置方式 (任选其一):
+ *    a) 后端 .env: TEXTIN_APP_ID / TEXTIN_SECRET_CODE (服务器级默认)
+ *    b) 前端 config.html OCR Tab 添加 TextIn Key (用户级,优先于 .env)
  *
  * 免费额度: 1000 次/页（一次性赠送）
  */
 import dotenv from 'dotenv'
 dotenv.config()
 
-const APP_ID = process.env.TEXTIN_APP_ID || ''
-const SECRET_CODE = process.env.TEXTIN_SECRET_CODE || ''
+const ENV_APP_ID = process.env.TEXTIN_APP_ID || ''
+const ENV_SECRET_CODE = process.env.TEXTIN_SECRET_CODE || ''
 const BASE_URL = 'https://api.textin.com'
 
 /**
- * 检查是否配置了 TextIn 凭证
+ * 解析请求级凭证 — 优先用 opts 里传的 (来自前端请求头)
+ * 否则用 .env 默认
  */
-export function isTextInConfigured() {
-  return APP_ID !== '' && SECRET_CODE !== ''
+function resolveCredentials(opts = {}) {
+  const appId = (opts.appId || ENV_APP_ID || '').trim()
+  const secretCode = (opts.secretCode || ENV_SECRET_CODE || '').trim()
+  return { appId, secretCode }
+}
+
+/**
+ * 检查是否配置了 TextIn 凭证 (请求级 或 环境级)
+ */
+export function isTextInConfigured(opts = {}) {
+  const { appId, secretCode } = resolveCredentials(opts)
+  return appId !== '' && secretCode !== ''
 }
 
 /**
@@ -36,9 +49,10 @@ export function isTextInConfigured() {
  * @param {string} contentType - application/octet-stream | text/plain
  * @returns {Promise<{ok: boolean, data: any, raw: string}>}
  */
-async function textinRequest(endpoint, body, params = {}, contentType = 'application/octet-stream') {
-  if (!isTextInConfigured()) {
-    throw new Error('TextIn 未配置,请在 .env 设置 TEXTIN_APP_ID 和 TEXTIN_SECRET_CODE')
+async function textinRequest(endpoint, body, params = {}, contentType = 'application/octet-stream', opts = {}) {
+  const { appId, secretCode } = resolveCredentials(opts)
+  if (!appId || !secretCode) {
+    throw new Error('TextIn 未配置,请在 .env 设置 TEXTIN_APP_ID/TEXTIN_SECRET_CODE 或在 config.html 添加 OCR Key')
   }
 
   const url = new URL(BASE_URL + endpoint)
@@ -47,8 +61,8 @@ async function textinRequest(endpoint, body, params = {}, contentType = 'applica
   }
 
   const headers = {
-    'x-ti-app-id': APP_ID,
-    'x-ti-secret-code': SECRET_CODE,
+    'x-ti-app-id': appId,
+    'x-ti-secret-code': secretCode,
     'Content-Type': contentType,
   }
 
@@ -93,7 +107,8 @@ export async function eraseHandwriting(imageBuffer, opts = {}) {
     '/ai/service/v1/handwritten_erase',
     imageBuffer,
     { crop, doc_direction },
-    'application/octet-stream'
+    'application/octet-stream',
+    opts
   )
 
   // 返回格式: { image: "base64...", code: 200, message: "success" }
@@ -126,7 +141,8 @@ export async function recognizeFormula(imageBuffer, opts = {}) {
     '/ai/service/v2/recognize/formula',
     imageBuffer,
     { mode },
-    'application/octet-stream'
+    'application/octet-stream',
+    opts
   )
 
   // 返回结构: { result: { lines: [{ text: "LaTeX", ... }] } }
@@ -150,12 +166,13 @@ export async function recognizeFormula(imageBuffer, opts = {}) {
  * @param {Buffer} imageBuffer - 图片二进制
  * @returns {Promise<{lines: Array, blocks: Array}>}
  */
-export async function recognizeText(imageBuffer) {
+export async function recognizeText(imageBuffer, opts = {}) {
   const { data } = await textinRequest(
     '/ai/service/v2/recognize',
     imageBuffer,
     { options: { recognize_graphics: 1 } },
-    'application/octet-stream'
+    'application/octet-stream',
+    opts
   )
 
   // 提取所有 textlines
@@ -187,7 +204,7 @@ export async function recognizeText(imageBuffer) {
  *
  * 返回给上层做语义解析
  */
-export async function ocrPipeline(imageBuffer) {
+export async function ocrPipeline(imageBuffer, opts = {}) {
   const result = {
     handwritingErased: false,
     cleanedImageBase64: '',
@@ -198,7 +215,7 @@ export async function ocrPipeline(imageBuffer) {
   // ① 手写擦除
   let processedBuffer = imageBuffer
   try {
-    const erasedBuffer = await eraseHandwriting(imageBuffer)
+    const erasedBuffer = await eraseHandwriting(imageBuffer, opts)
     processedBuffer = erasedBuffer
     result.handwritingErased = true
     result.cleanedImageBase64 = `data:image/png;base64,${erasedBuffer.toString('base64')}`
@@ -210,8 +227,8 @@ export async function ocrPipeline(imageBuffer) {
 
   // ② 公式识别 + ③ 文字识别（并行）
   const [formulaResult, textResult] = await Promise.allSettled([
-    recognizeFormula(processedBuffer),
-    recognizeText(processedBuffer),
+    recognizeFormula(processedBuffer, opts),
+    recognizeText(processedBuffer, opts),
   ])
 
   if (formulaResult.status === 'fulfilled') {

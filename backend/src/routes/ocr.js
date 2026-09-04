@@ -66,9 +66,20 @@ router.get('/status', (_req, res) => {
  *   }
  * }
  */
+/**
+ * 从请求头提取 TextIn 凭证 (前端从 localStorage 传过来)
+ * 没有时回退 .env
+ */
+function extractTextInCredentials(req) {
+  const appId = (req.headers['x-textin-app-id'] || '').toString().trim()
+  const secretCode = (req.headers['x-textin-secret-code'] || '').toString().trim()
+  return { appId, secretCode }
+}
+
 router.post('/', async (req, res) => {
   try {
     const { imageBase64, subject = '数学', skipHandwritingErase = false } = req.body
+    const textinOpts = extractTextInCredentials(req)
 
     if (!imageBase64) {
       return res.status(400).json({ error: '需要 imageBase64 参数' })
@@ -79,13 +90,14 @@ router.post('/', async (req, res) => {
     const imageBuffer = Buffer.from(cleanBase64, 'base64')
 
     console.log(`[OCR] 收到图片,大小: ${(imageBuffer.length / 1024).toFixed(1)} KB`)
+    console.log(`[OCR] TextIn 凭证来源: ${textinOpts.appId ? '请求头' : isTextInConfigured() ? '.env' : '未配置'}`)
 
     // ─── ① TextIn 去手写（专业试卷模式） ────────────────────────────────
     let processedBuffer = imageBuffer
     let handwritingErased = false
     let cleanedImageBase64 = imageBase64
 
-    if (isTextInConfigured() && !skipHandwritingErase) {
+    if (isTextInConfigured(textinOpts) && !skipHandwritingErase) {
       try {
         processedBuffer = await eraseHandwriting(imageBuffer, {
           crop: 1,         // 自动切边
@@ -97,7 +109,7 @@ router.post('/', async (req, res) => {
       } catch (err) {
         console.warn('[OCR] 手写擦除失败,继续使用原图:', err.message)
       }
-    } else if (!isTextInConfigured()) {
+    } else if (!isTextInConfigured(textinOpts)) {
       console.warn('[OCR] TextIn 未配置,跳过专业去手写步骤（仅依赖前端预处理）')
     }
 
@@ -106,9 +118,9 @@ router.post('/', async (req, res) => {
     let textLines = []
     let ocrSuccess = false
 
-    if (isTextInConfigured()) {
+    if (isTextInConfigured(textinOpts)) {
       try {
-        const pipelineResult = await ocrPipeline(processedBuffer)
+        const pipelineResult = await ocrPipeline(processedBuffer, textinOpts)
         formulas = pipelineResult.formulas
         textLines = pipelineResult.textLines
         ocrSuccess = true

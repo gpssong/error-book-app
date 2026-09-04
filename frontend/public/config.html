@@ -509,7 +509,15 @@
       <label>Base URL</label>
       <input type="text" id="keyBaseUrl" placeholder="https://api.example.com/v1" />
     </div>
-    <div class="field">
+    <div class="field" id="textinCredentials" style="display:none">
+      <label>x-ti-app-id</label>
+      <input type="text" id="keyAppId" placeholder="合合信息 App ID" />
+    </div>
+    <div class="field" id="textinCredentials2" style="display:none">
+      <label>x-ti-secret-code</label>
+      <input type="password" id="keySecretCode" placeholder="合合信息 Secret Code" />
+    </div>
+    <div class="field" id="valueField">
       <label>API Key</label>
       <input type="password" id="keyValue" placeholder="sk-..." />
     </div>
@@ -723,14 +731,19 @@ function renderKeys(category) {
     list.innerHTML = '<div class="empty"><div class="icon">🔑</div><div>还没有 ' + categoryName(category) + ' Key</div></div>'
     return
   }
-  list.innerHTML = filtered.map(k => `
+  list.innerHTML = filtered.map(k => {
+    const isTextin = k.provider === 'textin'
+    const detailLabel = isTextin
+      ? `appId: ${(k.appId || '').slice(0, 6)}...${(k.appId || '').slice(-4)} · secret: ***${(k.secretCode || '').slice(-4)}`
+      : `sk-***${(k.value || '').slice(-4)}`
+    return `
     <div class="key-card ${k.current ? 'active' : ''}">
       <div class="key-card-header">
         <span class="key-name">${providerIcon(k.provider)} ${esc(k.name)}</span>
         <span class="key-status ${k.current ? 'current' : (k.enabled ? 'on' : 'off')}">${k.current ? '当前使用' : (k.enabled ? '已启用' : '已停用')}</span>
       </div>
       <div class="key-provider">${providerLabel(k.provider)} · ${esc(k.base_url || '默认地址')}</div>
-      <div class="key-detail">sk-***${(k.value || '').slice(-4)}</div>
+      <div class="key-detail">${esc(detailLabel)}</div>
       ${k.note ? `<div class="field-hint" style="margin-top:6px">📝 ${esc(k.note)}</div>` : ''}
       <div class="key-metrics">
         <div>调用 <span>${k.usage || 0}</span> 次</div>
@@ -743,7 +756,8 @@ function renderKeys(category) {
         <button class="btn btn-danger btn-sm" onclick="deleteKey('${k.id}')">删除</button>
       </div>
     </div>
-  `).join('')
+  `
+  }).join('')
 }
 
 function addKey(category) {
@@ -755,6 +769,8 @@ function addKey(category) {
   document.getElementById('keyName').value = ''
   onProviderChange()
   document.getElementById('keyValue').value = ''
+  document.getElementById('keyAppId').value = ''
+  document.getElementById('keySecretCode').value = ''
   document.getElementById('keyDefaultModel').value = ''
   document.getElementById('keyNote').value = ''
   document.getElementById('keyModalStatus').className = 'status'
@@ -774,6 +790,8 @@ function editKey(id) {
   onProviderChange()
   document.getElementById('keyBaseUrl').value = k.base_url || ''
   document.getElementById('keyValue').value = k.value || ''
+  document.getElementById('keyAppId').value = k.appId || ''
+  document.getElementById('keySecretCode').value = k.secretCode || ''
   document.getElementById('keyDefaultModel').value = k.default_model || ''
   document.getElementById('keyNote').value = k.note || ''
   document.getElementById('keyModal').classList.add('show')
@@ -791,29 +809,45 @@ function onProviderChange() {
   const p = presets[provider] || presets.custom
   document.getElementById('keyBaseUrl').value = p.url
   document.getElementById('keyDefaultModel').value = p.model
+
+  // TextIn 需要双凭证 (x-ti-app-id / x-ti-secret-code)
+  const isTextin = provider === 'textin'
+  document.getElementById('textinCredentials').style.display  = isTextin ? 'block' : 'none'
+  document.getElementById('textinCredentials2').style.display = isTextin ? 'block' : 'none'
+  document.getElementById('valueField').style.display        = isTextin ? 'none' : 'block'
 }
 
 function submitKey() {
-  const name     = document.getElementById('keyName').value.trim()
-  const provider = document.getElementById('keyProvider').value
-  const base_url = document.getElementById('keyBaseUrl').value.trim()
-  const value    = document.getElementById('keyValue').value.trim()
-  const model    = document.getElementById('keyDefaultModel').value.trim()
-  const note     = document.getElementById('keyNote').value.trim()
+  const name        = document.getElementById('keyName').value.trim()
+  const provider    = document.getElementById('keyProvider').value
+  const base_url    = document.getElementById('keyBaseUrl').value.trim()
+  const value       = document.getElementById('keyValue').value.trim()
+  const appId       = document.getElementById('keyAppId').value.trim()
+  const secretCode  = document.getElementById('keySecretCode').value.trim()
+  const model       = document.getElementById('keyDefaultModel').value.trim()
+  const note        = document.getElementById('keyNote').value.trim()
 
-  if (!name || !value) {
+  // TextIn 需要双凭证
+  if (provider === 'textin') {
+    if (!name || !appId || !secretCode) {
+      showStatus(document.getElementById('keyModalStatus'), 'TextIn 需要填写名称、x-ti-app-id、x-ti-secret-code', 'error')
+      return
+    }
+  } else if (!name || !value) {
     showStatus(document.getElementById('keyModalStatus'), '请填写名称和 API Key', 'error')
     return
   }
 
+  const data = { name, provider, base_url, value, appId, secretCode, default_model: model, note }
+
   if (keyEditId) {
     const k = keys.find(x => x.id === keyEditId)
-    if (k) Object.assign(k, { name, provider, base_url, value, default_model: model, note })
+    if (k) Object.assign(k, data)
   } else {
     keys.push({
       id: 'key_' + Date.now(),
       category: keyCategory,
-      name, provider, base_url, value, default_model: model, note,
+      ...data,
       enabled: true,
       current: false,
       usage: 0,
