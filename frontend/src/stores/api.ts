@@ -189,6 +189,16 @@ const api = {
       if (!res.ok) throw new Error('未登录')
       return res.json() as Promise<{ id: string; username: string; email: string; displayName: string }>
     },
+    async updateMe(data: { displayName?: string; oldPassword?: string; newPassword?: string }) {
+      const res = await fetch(`${BASE_URL}/api/auth/me`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...(auth.getToken() ? { Authorization: `Bearer ${auth.getToken()}` } : {}) },
+        body: JSON.stringify(data),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body.error || '更新失败')
+      return body as { id: string; username: string; email: string; displayName: string }
+    },
   },
 }
 

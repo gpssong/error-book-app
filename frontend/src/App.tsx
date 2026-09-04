@@ -7,6 +7,7 @@
  *    - 有 → 加载数据进入主界面
  *    - 无 → 显示登录/注册页
  * 2. 任意 API 返回 401 时,通过 emitAuthRequired 自动跳回登录页
+ * 3. 监听 storage 事件，支持多标签页同步退出
  */
 import React, { useState, useEffect, useMemo } from 'react'
 import { AppProvider, useApp } from './stores/AppContext'
@@ -18,10 +19,11 @@ import PrintPreviewScreen from './components/PrintPreviewScreen'
 import CameraScreen from './components/CameraScreen'
 import LoginScreen from './components/LoginScreen'
 import RegisterScreen from './components/RegisterScreen'
+import ProfileScreen from './components/ProfileScreen'
 import { Icon } from './components/Icons'
 import { auth, AUTH_EVENT } from './stores/auth'
 
-type Screen = 'dashboard' | 'childManage' | 'errorList' | 'errorDetail' | 'printPreview' | 'camera'
+type Screen = 'dashboard' | 'childManage' | 'errorList' | 'errorDetail' | 'printPreview' | 'camera' | 'profile'
 type AuthScreen = 'login' | 'register'
 
 function AppContent() {
@@ -30,8 +32,9 @@ function AppContent() {
   const [selectedErrorId, setSelectedErrorId] = useState<string | null>(null)
   const [navActive, setNavActive] = useState<'home' | 'list' | 'ai' | 'profile'>('home')
 
-  // 登录状态
-  const [loggedIn, setLoggedIn] = useState(auth.isLoggedIn())
+  // 登录状态（用 getter 保证每次读取最新值，支持多标签页同步）
+  const checkLoggedIn = () => auth.isLoggedIn()
+  const [loggedIn, setLoggedIn] = useState(checkLoggedIn)
   const [authScreen, setAuthScreen] = useState<AuthScreen>('login')
 
   // 监听 401 事件，自动跳登录页
@@ -42,6 +45,18 @@ function AppContent() {
     }
     window.addEventListener(AUTH_EVENT, handler)
     return () => window.removeEventListener(AUTH_EVENT, handler)
+  }, [])
+
+  // 监听多标签页登出事件（localStorage change）
+  useEffect(() => {
+    const handler = (e: StorageEvent) => {
+      if (e.key === 'error_book_token' && !e.newValue) {
+        setLoggedIn(false)
+        setAuthScreen('login')
+      }
+    }
+    window.addEventListener('storage', handler)
+    return () => window.removeEventListener('storage', handler)
   }, [])
 
   const handleLoginSuccess = () => setLoggedIn(true)
@@ -66,7 +81,7 @@ function AppContent() {
     { key: 'home' as const, label: '首页', icon: <Icon.Home />, screen: 'dashboard' as Screen },
     { key: 'list' as const, label: '错题', icon: <Icon.List />, screen: 'errorList' as Screen },
     { key: 'ai' as const, label: 'AI练习', icon: <Icon.AI />, screen: 'errorList' as Screen },
-    { key: 'profile' as const, label: '孩子', icon: <Icon.Person />, screen: 'childManage' as Screen },
+    { key: 'profile' as const, label: '我的', icon: <Icon.Person />, screen: 'profile' as Screen },
   ]
 
   const BottomNav = () => (
@@ -101,6 +116,7 @@ function AppContent() {
         {screen === 'childManage' && <ChildManageScreen onNavigate={goTo} />}
         {screen === 'printPreview' && <PrintPreviewScreen onNavigate={goTo} />}
         {screen === 'camera' && <CameraScreen onNavigate={goTo} />}
+        {screen === 'profile' && <ProfileScreen onNavigate={goTo} />}
       </div>
       {showNav && <BottomNav />}
     </div>

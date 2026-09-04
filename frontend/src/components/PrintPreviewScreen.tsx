@@ -28,8 +28,15 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
   }
 
   const handlePrint = () => {
-    // 调用浏览器打印 API
     window.print()
+  }
+
+  // 获取每道错题的参考答案：优先用 first similarQuestion.answer
+  const getAnswer = (err: typeof printErrors[number]) => {
+    if (err.similarQuestions && err.similarQuestions.length > 0) {
+      return err.similarQuestions[0].answer
+    }
+    return null
   }
 
   return (
@@ -96,32 +103,41 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
 
           {/* Grid */}
           <div className={`p-4 ${printLayout === '2列' ? 'grid grid-cols-2 gap-3' : 'space-y-4'}`}>
-            {printErrors.map((err, idx) => (
-              <div key={err.id} className="border border-slate-200 rounded-xl overflow-hidden">
-                <div className="px-2 py-1.5 flex items-center justify-between" style={{ background: '#F8FAFC' }}>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-4 h-4 rounded-full text-white flex items-center justify-center text-[9px] font-black" style={{ background: '#2563EB' }}>
-                      {idx + 1}
+            {printErrors.map((err, idx) => {
+              const answer = getAnswer(err)
+              return (
+                <div key={err.id} className="border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="px-2 py-1.5 flex items-center justify-between" style={{ background: '#F8FAFC' }}>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-4 h-4 rounded-full text-white flex items-center justify-center text-[9px] font-black" style={{ background: '#2563EB' }}>
+                        {idx + 1}
+                      </div>
+                      <SubjectTag subject={err.subject} />
                     </div>
-                    <SubjectTag subject={err.subject} />
+                    <span className="text-[9px] text-slate-400 font-600">{err.knowledgePoint}</span>
                   </div>
-                  <span className="text-[9px] text-slate-400 font-600">{err.knowledgePoint}</span>
-                </div>
-                <div className="bg-slate-50">
-                  <img src={err.imageUrl} alt={err.title} className={`w-full object-cover ${printLayout === '2列' ? 'h-20' : 'h-28'}`} />
-                </div>
-                <div className="px-2 py-2">
-                  <p className="text-[10px] font-bold text-slate-700 truncate">{err.title}</p>
-                  <div className="mt-2 border-t border-dashed border-slate-200 pt-2">
-                    <p className="text-[9px] text-slate-400 font-600">我的解答：</p>
-                    <div className="h-8 border-b border-slate-200 mt-1" />
+                  <div className="bg-slate-50">
+                    <img src={err.imageUrl} alt={err.title} className={`w-full object-cover ${printLayout === '2列' ? 'h-20' : 'h-28'}`} />
                   </div>
-                  <div className="mt-2 rounded-lg p-1.5" style={{ background: '#FFF7ED' }}>
-                    <p className="text-[9px] text-orange-500 font-bold">参考答案：顶点坐标 (1, 1)，对称轴 x=1</p>
+                  <div className="px-2 py-2">
+                    <p className="text-[10px] font-bold text-slate-700 truncate">{err.title}</p>
+                    <div className="mt-2 border-t border-dashed border-slate-200 pt-2">
+                      <p className="text-[9px] text-slate-400 font-600">我的解答：</p>
+                      <div className="h-8 border-b border-slate-200 mt-1" />
+                    </div>
+                    {answer ? (
+                      <div className="mt-2 rounded-lg p-1.5" style={{ background: '#FFF7ED' }}>
+                        <p className="text-[9px] text-orange-500 font-bold">参考答案：{answer}</p>
+                      </div>
+                    ) : (
+                      <div className="mt-2 rounded-lg p-1.5" style={{ background: '#FFF7ED' }}>
+                        <p className="text-[9px] text-orange-400 font-bold italic">暂无答案（请先 AI 生成）</p>
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
 
           {/* A4 footer */}

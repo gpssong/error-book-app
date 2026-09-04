@@ -58,7 +58,10 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         children: state.children.filter((c) => c.id !== action.payload),
-        activeChildId: state.activeChildId === action.payload ? '' : state.activeChildId,
+        // 若删除的是当前孩子且有剩余，切换到第一个；否则保持空（由 refreshChildren 兜底）
+        activeChildId: state.activeChildId === action.payload
+          ? state.children.filter((c) => c.id !== action.payload)[0]?.id ?? ''
+          : state.activeChildId,
       }
     case 'SET_ACTIVE_CHILD':
       return { ...state, activeChildId: action.payload }
@@ -114,6 +117,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         console.log(`[AppContext] refreshChildren ok, ${children.length} children`)
         dispatch({ type: 'SET_CHILDREN', payload: children })
         if (!state.activeChildId && children.length > 0) {
+          dispatch({ type: 'SET_ACTIVE_CHILD', payload: children[0].id })
+        }
+        // 若当前 activeChildId 对应的孩子已被删除，自动切换
+        if (state.activeChildId && !children.find((c) => c.id === state.activeChildId) && children.length > 0) {
           dispatch({ type: 'SET_ACTIVE_CHILD', payload: children[0].id })
         }
         return

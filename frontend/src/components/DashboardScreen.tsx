@@ -16,7 +16,6 @@ interface Props {
 export default function DashboardScreen({ onNavigate }: Props) {
   const { children, activeChildId, setActiveChild, errors } = useApp()
   const [showChildPicker, setShowChildPicker] = useState(false)
-  const [flashOn] = useState(false)
 
   const activeChildData = children.find((c) => c.id === activeChildId)
   const childErrors = errors.filter((e) => e.childId === activeChildId)
@@ -30,10 +29,7 @@ export default function DashboardScreen({ onNavigate }: Props) {
         <h2 className="font-black text-slate-800 text-lg mb-2">欢迎使用错题本</h2>
         <p className="text-sm text-slate-500 text-center mb-6">添加你的第一个孩子档案开始记录错题</p>
         <button
-          onClick={() => {
-            console.log('[WELCOME] Add child clicked')
-            onNavigate('childManage')
-          }}
+          onClick={() => onNavigate('childManage')}
           className="px-6 py-3 rounded-2xl text-white font-extrabold text-sm"
           style={{ background: '#2563EB' }}
         >
@@ -43,7 +39,43 @@ export default function DashboardScreen({ onNavigate }: Props) {
     )
   }
 
-  if (!activeChildData) return null
+  if (!activeChildData) {
+    // 兜底：尝试切换到有效孩子
+    if (children.length > 0) {
+      setActiveChild(children[0].id)
+    }
+    return (
+      <div className="flex flex-col h-full bg-[#F8FAFC] items-center justify-center">
+        <p className="text-slate-400 font-bold">加载中…</p>
+      </div>
+    )
+  }
+
+  // ── 按天统计本周新增错题 ────────────────────────────────────────────────────
+  const getWeekDayCounts = () => {
+    const today = new Date()
+    const dayOfWeek = today.getDay() // 0=周日
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek // 本周一的偏移
+    const monday = new Date(today)
+    monday.setDate(today.getDate() + mondayOffset)
+    monday.setHours(0, 0, 0, 0)
+
+    const counts: number[] = [0, 0, 0, 0, 0, 0, 0] // 周一到周日
+    childErrors.forEach((e) => {
+      const d = new Date(e.date)
+      if (isNaN(d.getTime())) return
+      if (d < monday) return // 不在本周
+      const diffDays = Math.floor((d.getTime() - monday.getTime()) / 86400000)
+      if (diffDays >= 0 && diffDays <= 6) {
+        counts[diffDays]++
+      }
+    })
+    return counts
+  }
+
+  const weekCounts = getWeekDayCounts()
+  const maxWeekCount = Math.max(...weekCounts, 1) // 避免除以0
+  const todayIndex = (new Date().getDay() + 6) % 7 // 0=周一
 
   // ── 孩子选择器 ──────────────────────────────────────────────────────────────
   const ChildPicker = () => (
@@ -130,7 +162,7 @@ export default function DashboardScreen({ onNavigate }: Props) {
         <div className="flex gap-3">
           {[
             { label: '总错题', value: activeChildData.errorCount, unit: '道', color: '#2563EB', bg: '#EFF6FF' },
-            { label: '本周新增', value: activeChildData.weeklyCount, unit: '道', color: '#F97316', bg: '#FFF7ED' },
+            { label: '本周新增', value: weekCounts.reduce((a, b) => a + b, 0), unit: '道', color: '#F97316', bg: '#FFF7ED' },
             { label: '已掌握', value: activeChildData.masteredCount, unit: '道', color: '#10B981', bg: '#ECFDF5' },
           ].map((s) => (
             <div key={s.label} className="flex-1 rounded-2xl p-3" style={{ background: s.bg }}>
@@ -142,19 +174,28 @@ export default function DashboardScreen({ onNavigate }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-        {/* Progress card */}
+        {/* Progress card - 基于真实本周错题数据 */}
         <div className="bg-white rounded-2xl p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-extrabold text-slate-800 text-sm">本周学习进度</h3>
-            <div className="flex items-center gap-1 text-[#10B981] text-xs font-bold"><Icon.TrendUp />+15%</div>
+            <div className="flex items-center gap-1 text-[#10B981] text-xs font-bold">
+              <Icon.TrendUp />
+              本周 {weekCounts.reduce((a, b) => a + b, 0)} 题
+            </div>
           </div>
           <div className="flex gap-1 items-end h-12">
             {['一', '二', '三', '四', '五', '六', '日'].map((day, i) => {
-              const heights = [60, 80, 45, 90, 70, 40, 85]
-              const isToday = i === 1
+              const heightPct = (weekCounts[i] / maxWeekCount) * 100
+              const isToday = i === todayIndex
               return (
                 <div key={day} className="flex-1 flex flex-col items-center gap-1">
-                  <div className="w-full rounded-t-md" style={{ height: `${heights[i]}%`, background: isToday ? '#2563EB' : '#DBEAFE', transition: '0.3s' }} />
+                  <div
+                    className="w-full rounded-t-md transition-all duration-300"
+                    style={{
+                      height: `${Math.max(heightPct, weekCounts[i] > 0 ? 15 : 4)}%`,
+                      background: isToday ? '#2563EB' : weekCounts[i] > 0 ? '#93C5FD' : '#F1F5F9',
+                    }}
+                  />
                   <span className="text-[9px] text-slate-400 font-600">{day}</span>
                 </div>
               )

@@ -12,6 +12,11 @@ apk/
 **/.DS_Store
 **/Thumbs.db
 
+# 调试脚本产生的奇怪文件名(bash 把 stderr 输出重定向到文件名)
+**/I,binascii*
+**/I,len*
+**/ihdr=*
+
 # IDE
 .idea/
 .vscode/

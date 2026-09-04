@@ -44,12 +44,15 @@ export function isTextInConfigured(opts = {}) {
 /**
  * 通用请求方法
  * @param {string} endpoint - 接口路径,例如 /ai/service/v1/handwritten_erase
- * @param {Buffer|string} body - 图片二进制流 或 图片 URL
- * @param {object} params - URL 参数,例如 { crop: 1, doc_direction: 4 }
- * @param {string} contentType - application/octet-stream | text/plain
+ * @param {Buffer|string} body - 图片二进制流 或 图片 URL 或 JSON 字符串
+ * @param {object} params - URL query 参数,例如 { url: "https://..." } 或空
+ * @param {object} options
+ *   - contentType: 'application/octet-stream' | 'application/json' | 'text/plain'
+ *   - opts: 凭证覆盖 (来自请求级配置)
  * @returns {Promise<{ok: boolean, data: any, raw: string}>}
  */
-async function textinRequest(endpoint, body, params = {}, contentType = 'application/octet-stream', opts = {}) {
+async function textinRequest(endpoint, body, params = {}, options = {}) {
+  const { contentType = 'application/octet-stream', opts = {} } = options
   const { appId, secretCode } = resolveCredentials(opts)
   if (!appId || !secretCode) {
     throw new Error('TextIn 未配置,请在 .env 设置 TEXTIN_APP_ID/TEXTIN_SECRET_CODE 或在 config.html 添加 OCR Key')
@@ -57,7 +60,9 @@ async function textinRequest(endpoint, body, params = {}, contentType = 'applica
 
   const url = new URL(BASE_URL + endpoint)
   for (const [k, v] of Object.entries(params)) {
-    url.searchParams.append(k, String(v))
+    if (v !== undefined && v !== null) {
+      url.searchParams.append(k, String(v))
+    }
   }
 
   const headers = {
@@ -107,8 +112,7 @@ export async function eraseHandwriting(imageBuffer, opts = {}) {
     '/ai/service/v1/handwritten_erase',
     imageBuffer,
     { crop, doc_direction },
-    'application/octet-stream',
-    opts
+    { contentType: 'application/octet-stream', opts }
   )
 
   // 返回格式: { image: "base64...", code: 200, message: "success" }
@@ -132,8 +136,7 @@ export async function eraseHandwriting(imageBuffer, opts = {}) {
  * @param {Buffer} imageBuffer - 图片二进制
  * @param {object} opts
  *   - mode: 'formula' | 'formula_and_text' (默认 formula)
- *   - max_lines: 最多返回多少行
- * @returns {Promise<{formulas: Array<{latex: string, position: number[]}>}>}
+ * @returns {Promise<{formulas: Array<{latex: string, type: string, angle: number}>}>}
  */
 export async function recognizeFormula(imageBuffer, opts = {}) {
   const { mode = 'formula' } = opts
@@ -141,8 +144,7 @@ export async function recognizeFormula(imageBuffer, opts = {}) {
     '/ai/service/v2/recognize/formula',
     imageBuffer,
     { mode },
-    'application/octet-stream',
-    opts
+    { contentType: 'application/octet-stream', opts }
   )
 
   // 返回结构: { result: { lines: [{ text: "LaTeX", ... }] } }
@@ -167,30 +169,29 @@ export async function recognizeFormula(imageBuffer, opts = {}) {
  * @returns {Promise<{lines: Array, blocks: Array}>}
  */
 export async function recognizeText(imageBuffer, opts = {}) {
+  const { recognize_graphics = 1 } = opts
+  // 重要:TextIn /v2/recognize 必须 application/octet-stream 二进制,JSON body 会报 40600
   const { data } = await textinRequest(
     '/ai/service/v2/recognize',
     imageBuffer,
-    { options: { recognize_graphics: 1 } },
-    'application/octet-stream',
-    opts
+    { recognize_graphics },
+    { contentType: 'application/octet-stream', opts }
   )
 
-  // 提取所有 textlines
-  const pages = data?.result?.pages || []
-  const allLines = []
-  for (const page of pages) {
-    for (const block of page.structured?.lines || page.lines || []) {
-      allLines.push({
-        text: block.text || '',
-        type: block.sub_type || 'text',
-        angle: block.angle || 0,
-        direction: block.direction || 0,
-      })
-    }
-  }
+  // 实际返回结构是 result.lines(扁平),不是 pages[].structured.lines
+  const rawLines = data?.result?.lines || []
+  const lines = rawLines.map((b) => ({
+    text: b.text || '',
+    type: b.type || 'text', // text | formula
+    angle: b.angle || 0,
+    direction: b.direction || 0,
+    score: b.score || 0,
+    position: b.position || [],
+    handwritten: b.handwritten || 0,
+  }))
 
   return {
-    lines: allLines,
+    lines,
     raw: data,
   }
 }

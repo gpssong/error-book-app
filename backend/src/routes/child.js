@@ -96,6 +96,11 @@ router.delete('/:id', async (req, res) => {
     if (isMemoryDB()) {
       const child = memoryStore.children.get(req.params.id)
       if (!child || child.ownerId !== req.userId) return res.status(404).json({ error: '孩子不存在' })
+      // 防误删最后一个：至少保留一个孩子
+      const remaining = Array.from(memoryStore.children.values()).filter((c) => c.ownerId === req.userId && c.id !== req.params.id)
+      if (remaining.length === 0) {
+        return res.status(400).json({ error: '至少需要保留一个孩子的档案' })
+      }
       // 先清除该孩子的所有错题
       for (const [eid, err] of memoryStore.errors.entries()) {
         if (err.childId === req.params.id) memoryStore.errors.delete(eid)
@@ -103,9 +108,14 @@ router.delete('/:id', async (req, res) => {
       memoryStore.children.delete(req.params.id)
       return res.json({ deleted: true })
     }
-    // MongoDB: 先删错题，再删孩子
+    // MongoDB: 先校验权限
     const child = await Child.findOne({ _id: req.params.id, ownerId: req.userId })
     if (!child) return res.status(404).json({ error: '孩子不存在' })
+    // 防误删最后一个
+    const remainingCount = await Child.countDocuments({ ownerId: req.userId, _id: { $ne: req.params.id } })
+    if (remainingCount === 0) {
+      return res.status(400).json({ error: '至少需要保留一个孩子的档案' })
+    }
     await ErrorQuestion.deleteMany({ childId: req.params.id })
     await Child.findByIdAndDelete(req.params.id)
     res.json({ deleted: true })

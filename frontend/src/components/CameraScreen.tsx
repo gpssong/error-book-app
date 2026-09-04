@@ -17,9 +17,11 @@ import React, { useState, useRef } from 'react'
 import { useApp } from '@/stores/AppContext'
 import { Icon } from '@/components/Icons'
 import DrawingCanvas from '@/components/DrawingCanvas'
+import LatexPreview from '@/components/LatexPreview'
 import type { Subject } from '@/stores/api'
 import api from '@/stores/api'
 import { preprocessImage } from '@/utils/imagePreprocess'
+import 'katex/dist/katex.min.css'
 
 type Screen = 'dashboard' | 'childManage' | 'errorList' | 'errorDetail' | 'printPreview' | 'camera'
 type Phase = 'viewfinder' | 'annotating' | 'captured' | 'recognizing' | 'result'
@@ -32,7 +34,7 @@ export default function CameraScreen({ onNavigate }: Props) {
   const { activeChildId, createError } = useApp()
   const [cameraPhase, setCameraPhase] = useState<Phase>('viewfinder')
   const [flashOn, setFlashOn] = useState(false)
-  const [cameraMode] = useState<'拍题' | '作业' | '试卷'>('拍题')
+  const [cameraMode, setCameraMode] = useState<'拍题' | '作业' | '试卷'>('拍题')
 
   // 图片相关
   const [capturedImageUrl, setCapturedImageUrl] = useState<string>('')
@@ -43,6 +45,11 @@ export default function CameraScreen({ onNavigate }: Props) {
   const [recognizeSubject, setRecognizeSubject] = useState<Subject>('数学')
   const [recognizeProgress, setRecognizeProgress] = useState(0)
   const [recognizedData, setRecognizedData] = useState<{ title: string; knowledgePoint: string; textContent: string } | null>(null)
+  const [ocrSuccess, setOcrSuccess] = useState(false)
+
+  // 手动编辑状态
+  const [editTitle, setEditTitle] = useState('')
+  const [editContent, setEditContent] = useState('')
 
   // 文件输入引用
   const cameraInputRef = useRef<HTMLInputElement>(null)
@@ -83,47 +90,52 @@ export default function CameraScreen({ onNavigate }: Props) {
       // 使用标注后的图片进行 OCR
       let imageBase64 = recognizedImageBase64 || capturedImageUrl
 
-      // ⚙️ OCR 前置预处理：去白边 / 去手写 / 灰度增强
-      // 注：标注过的图片不再去手写（避免把有用笔迹涂掉），但仍去白边 + 灰度增强
-      const hasHandwriting = !!existingHandwritingSvg
+      console.log('[OCR] 原始图片大小:', imageBase64?.length, 'bytes, 前50字符:', imageBase64?.slice(0, 50))
+
+      // ⚙️ OCR 前置预处理：仅做 EXIF 旋转 + 压缩到 1200px（q=0.82）
+      // 不再做二值化/裁剪/去手写,避免破坏内容（交给后端 TextIn 专业去手写）
       try {
-        console.log('[OCR] 开始图片预处理…', { hasHandwriting })
+        console.log('[OCR] 开始图片预处理…')
         imageBase64 = await preprocessImage(imageBase64, {
-          removeHandwriting: !hasHandwriting,
-          maxDim: 1600,
-          margin: 12,
-          inkThreshold: 230,
-          inkBlobMaxArea: 80,
+          maxDim: 1200,
         })
-        console.log('[OCR] 预处理完成')
+        console.log('[OCR] 预处理完成, 新大小:', imageBase64.length, 'bytes')
       } catch (preErr) {
         console.warn('[OCR] 预处理失败，使用原图:', preErr)
       }
 
+      console.log('[OCR] 发送给后端的数据大小:', (imageBase64?.length || 0) / 1024, 'KB')
       const result = await api.recognizeQuestion({ imageBase64, subject: recognizeSubject })
 
       clearInterval(progressTimer)
       setRecognizeProgress(100)
 
       setTimeout(() => {
+        setOcrSuccess(true)
         setRecognizedData({
           title: result.title,
           knowledgePoint: result.knowledgePoint,
           textContent: result.textContent,
         })
+        setEditTitle(result.title)
+        setEditContent(result.textContent)
+        console.log('[OCR] setEditContent, len=', (result.textContent || '').length, 'sample=', JSON.stringify(result.textContent).slice(0, 150))
         setCameraPhase('result')
       }, 300)
     } catch (err) {
       clearInterval(progressTimer)
       setRecognizeProgress(100)
       console.error('OCR 识别失败:', err)
-      // 降级：显示错误提示，让用户手动输入
+      // 降级：允许用户手动编辑题目
       setTimeout(() => {
+        setOcrSuccess(false)
         setRecognizedData({
-          title: '识别失败，请手动输入',
-          knowledgePoint: '未知',
+          title: '',
+          knowledgePoint: '',
           textContent: '',
         })
+        setEditTitle('')
+        setEditContent('')
         setCameraPhase('result')
       }, 500)
     }
@@ -136,9 +148,9 @@ export default function CameraScreen({ onNavigate }: Props) {
     const err = await createError({
       childId: activeChildId,
       subject: recognizeSubject,
-      title: recognizedData.title,
+      title: editTitle || recognizedData.title,
       knowledgePoint: recognizedData.knowledgePoint,
-      textContent: recognizedData.textContent,
+      textContent: editContent || recognizedData.textContent,
       imageUrl: finalImageUrl,
       imageBase64: recognizedImageBase64 || undefined,
       handwritingSvg: existingHandwritingSvg || undefined,
@@ -206,7 +218,7 @@ export default function CameraScreen({ onNavigate }: Props) {
             {(['拍题', '作业', '试卷'] as const).map((m) => (
               <button
                 key={m}
-                onClick={() => {}}
+                onClick={() => setCameraMode(m)}
                 className="text-xs font-bold px-4 py-1.5 rounded-full transition-all"
                 style={cameraMode === m
                   ? { background: '#2563EB', color: '#fff' }
@@ -393,23 +405,43 @@ export default function CameraScreen({ onNavigate }: Props) {
               <div className="flex items-start justify-between">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-black" style={{ background: '#10B981' }}>✓</div>
-                    <span className="text-xs font-extrabold text-[#10B981]">识别成功</span>
+                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-black" style={{ background: ocrSuccess ? '#10B981' : '#F59E0B' }}>
+                      {ocrSuccess ? '✓' : '!'}
+                    </div>
+                    <span className="text-xs font-extrabold" style={{ color: ocrSuccess ? '#10B981' : '#F59E0B' }}>
+                      {ocrSuccess ? '识别成功' : '请手动输入'}
+                    </span>
                   </div>
-                  <h3 className="font-extrabold text-slate-900 text-sm leading-snug">{recognizedData.title}</h3>
+                  <input
+                    className="font-extrabold text-slate-900 text-sm w-full border-b border-dashed border-slate-200 pb-0.5 focus:border-[#2563EB] focus:outline-none transition-colors"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    placeholder="点击输入题目标题…"
+                  />
                 </div>
                 <span className="text-xs font-bold px-2 py-1 rounded-full bg-blue-50 text-blue-600">{recognizeSubject}</span>
               </div>
 
               <div className="rounded-xl p-3" style={{ background: '#F8FAFC' }}>
-                <p className="text-[10px] font-extrabold text-slate-500 mb-1.5">📝 识别题目文字</p>
-                <p className="text-xs text-slate-700 font-bold leading-relaxed">{recognizedData.textContent}</p>
+                <p className="text-[10px] font-extrabold text-slate-500 mb-1.5">📝 题目文字（可编辑）</p>
+                <LatexPreview
+                  text={editContent}
+                  className="text-xs text-slate-700 font-bold leading-relaxed mb-2 p-2.5 rounded-lg border border-slate-100 bg-white"
+                />
+                <textarea
+                  className="w-full text-xs text-slate-700 font-mono resize-none outline-none rounded-lg border border-slate-200 p-2.5"
+                  rows={5}
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  placeholder="在这里输入或粘贴题目内容…"
+                />
+                <p className="text-[9px] text-slate-400 mt-1">支持 $行内公式$ 与 $$块级公式$$（KaTeX 渲染）</p>
               </div>
 
               <div>
                 <p className="text-[10px] font-extrabold text-slate-400 mb-1.5">知识点标签</p>
                 <div className="flex flex-wrap gap-1.5">
-                  <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-blue-50 text-blue-600">{recognizedData.knowledgePoint}</span>
+                  <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-blue-50 text-blue-600">{recognizedData?.knowledgePoint || '未知'}</span>
                 </div>
               </div>
             </div>

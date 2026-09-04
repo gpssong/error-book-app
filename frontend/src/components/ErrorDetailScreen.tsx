@@ -26,24 +26,28 @@ interface Props {
 export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
   const { errors, activeChildId, activeChild, updateError } = useApp()
   const err = errors.find((e) => e.id === errorId)
+
+  // 使用 lazy initializer 避免 err 为 undefined 时抛错
   const [tabActive, setTabActive] = useState<TabKey>('detail')
   const [detailSubPhase, setDetailSubPhase] = useState<DetailSubPhase>('view')
   const [aiStep, setAiStep] = useState(0)
   const [aiPlaying, setAiPlaying] = useState(false)
-  const [hasHandwriting, setHasHandwriting] = useState(!!err?.handwritingSvg)
-  const [showAnswer, setShowAnswer] = useState<Record<string, boolean>>({})
   const [aiLoading, setAiLoading] = useState(false)
-  const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(err?.aiAnalysis || null)
-  const [similarQuestions, setSimilarQuestions] = useState<SimilarQuestion[]>(err?.similarQuestions || [])
-  const [displayImageUrl, setDisplayImageUrl] = useState(err?.imageBase64 || err?.imageUrl)
-  const [currentHandwritingSvg, setCurrentHandwritingSvg] = useState(err?.handwritingSvg || '')
+  const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(err?.aiAnalysis ?? null)
+  const [similarQuestions, setSimilarQuestions] = useState<SimilarQuestion[]>(err?.similarQuestions ?? [])
+  const [displayImageUrl, setDisplayImageUrl] = useState<string>(err?.imageBase64 ?? err?.imageUrl ?? '')
+  const [currentHandwritingSvg, setCurrentHandwritingSvg] = useState<string>(err?.handwritingSvg ?? '')
+  const [hasHandwriting, setHasHandwriting] = useState<boolean>(!!err?.handwritingSvg)
+  const [showAnswer, setShowAnswer] = useState<Record<string, boolean>>({})
 
   // 当错误数据从后端刷新时同步本地状态
   useEffect(() => {
     if (err) {
-      setDisplayImageUrl(err.imageBase64 || err.imageUrl)
-      setCurrentHandwritingSvg(err.handwritingSvg || '')
+      setDisplayImageUrl(err.imageBase64 ?? err.imageUrl ?? '')
+      setCurrentHandwritingSvg(err.handwritingSvg ?? '')
       setHasHandwriting(!!err.handwritingSvg)
+      setAiResult(err.aiAnalysis ?? null)
+      setSimilarQuestions(err.similarQuestions ?? [])
     }
   }, [err?.id])
 
@@ -270,7 +274,7 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
               <div className="flex justify-between">
                 <span className="text-xs text-slate-500 font-bold">错误次数</span>
                 <div className="flex gap-1">
-                  {Array.from({ length: err.wrongCount }).map((_, i) => (
+                  {Array.from({ length: Math.min(err.wrongCount, 10) }).map((_, i) => (
                     <div key={i} className="w-2 h-2 rounded-full bg-red-400" />
                   ))}
                 </div>

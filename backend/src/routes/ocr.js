@@ -1,239 +1,229 @@
 /**
  * OCR 路由 - 拍照识题
  *
- * 端到端流水线（前端预处理 + TextIn + AI 语义解析）:
- *   浏览器端 (imagePreprocess.ts):
- *     ① EXIF 自动旋转
- *     ② 去白边（bbox 自动裁剪）
- *     ③ 灰度化 + 对比度增强
- *     ④ 去手写（连通域分析，可选）
- *   服务端（本文件）:
- *     ⑤ TextIn.eraseHandwriting()   ← 专业去手写（试卷模式）
- *     ⑥ TextIn.recognizeFormula()   ← 数学公式 → LaTeX
- *     ⑦ TextIn.recognizeText()      ← 通用文字 + 版面分析
- *     ⑧ MiniMax-M3 语义解析         ← title / knowledgePoint / textContent
+ * 端到端流水线（成熟方案）：
+ *   ① 接收 base64 → Buffer
+ *   ② (可选) TextIn 手写擦除 → 干净印刷图
+ *   ③ TextIn 文字识别 + 公式识别（并行,拿版面+LaTeX）
+ *   ④ 用 MiniMax-M3 / Agnes AI 把碎片化结果融合成结构化题目
+ *   ⑤ 任意环节失败 → 用 Agnes AI 视觉读图直接兜底
  *
- * POST /api/ocr        - 主入口
- * GET  /api/ocr/status - 检查 TextIn 是否配置
+ * 端点:
+ *   POST /api/ocr        - 主入口
+ *   GET  /api/ocr/status - 检查配置状态
  */
 import { Router } from 'express'
 import dotenv from 'dotenv'
 dotenv.config()
 
-import {
-  isTextInConfigured,
-  ocrPipeline,
-  eraseHandwriting,
-} from '../services/textin.js'
-import { semanticParse } from '../services/minimax.js'
+import { isTextInConfigured, eraseHandwriting, recognizeText } from '../services/textin.js'
+import { semanticParseText, visionFallback } from '../services/minimax.js'
 
 const router = Router()
 
-/**
- * 检查服务配置状态
- */
 router.get('/status', (_req, res) => {
   res.json({
-    textin: isTextInConfigured() ? 'configured' : 'not_configured',
+    textin: process.env.TEXTIN_APP_ID ? 'configured' : 'not_configured',
+    visionModel: process.env.VISION_MODEL || 'agnes-2.5-pro-alpha',
     minimax: process.env.MINIMAX_API_KEY ? 'configured' : 'not_configured',
-    pipeline: ['auto-rotate', 'crop-margin', 'gray-scale',
-               'inpaint-handwriting (frontend)',
-               'textin-erase', 'textin-formula', 'textin-text',
-               'MiniMax-semantic'],
   })
 })
 
-/**
- * 主入口 - 完整 OCR 流水线
- *
- * 请求体:
- * {
- *   imageBase64: string,    // 必填,data:image/jpeg;base64,... 形式
- *   subject?: string,       // 选填,默认为 "数学"
- *   skipHandwritingErase?: boolean,  // 选填,跳过 TextIn 去手写
- * }
- *
- * 响应:
- * {
- *   title: string,
- *   knowledgePoint: string,
- *   textContent: string,    // 含 LaTeX 公式
- *   subject: string,
- *   detail: {
- *     handwritingErased: boolean,
- *     formulas: Array<{latex: string, type: string}>,
- *     cleanedImageBase64: string,  // 擦除手写后的图,可用于预览
- *   }
- * }
- */
-/**
- * 从请求头提取 TextIn 凭证 (前端从 localStorage 传过来)
- * 没有时回退 .env
- */
-function extractTextInCredentials(req) {
-  const appId = (req.headers['x-textin-app-id'] || '').toString().trim()
-  const secretCode = (req.headers['x-textin-secret-code'] || '').toString().trim()
-  return { appId, secretCode }
-}
-
 router.post('/', async (req, res) => {
   try {
-    const { imageBase64, subject = '数学', skipHandwritingErase = false } = req.body
-    const textinOpts = extractTextInCredentials(req)
+    const { imageBase64, subject = '数学', cleanHandwriting = false } = req.body || {}
 
     if (!imageBase64) {
       return res.status(400).json({ error: '需要 imageBase64 参数' })
     }
 
-    // 解析 base64 → Buffer
-    const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '')
+    const cleanBase64 = String(imageBase64).replace(/^data:image\/\w+;base64,/, '')
+    if (!cleanBase64 || cleanBase64.length < 200) {
+      return res.status(400).json({ error: '图片数据无效或过小' })
+    }
+
     const imageBuffer = Buffer.from(cleanBase64, 'base64')
+    const imageSizeKB = imageBuffer.length / 1024
+    console.log(`[OCR] 收到图片,大小: ${imageSizeKB.toFixed(1)} KB, 学科: ${subject}, 去手写: ${cleanHandwriting}`)
 
-    console.log(`[OCR] 收到图片,大小: ${(imageBuffer.length / 1024).toFixed(1)} KB`)
-    console.log(`[OCR] TextIn 凭证来源: ${textinOpts.appId ? '请求头' : isTextInConfigured() ? '.env' : '未配置'}`)
-
-    // ─── ① TextIn 去手写（专业试卷模式） ────────────────────────────────
-    let processedBuffer = imageBuffer
-    let handwritingErased = false
-    let cleanedImageBase64 = imageBase64
-
-    if (isTextInConfigured(textinOpts) && !skipHandwritingErase) {
-      try {
-        processedBuffer = await eraseHandwriting(imageBuffer, {
-          crop: 1,         // 自动切边
-          doc_direction: 4 // 自动方向转正
-        })
-        handwritingErased = true
-        cleanedImageBase64 = `data:image/png;base64,${processedBuffer.toString('base64')}`
-        console.log(`[OCR] 手写擦除完成,新大小: ${(processedBuffer.length / 1024).toFixed(1)} KB`)
-      } catch (err) {
-        console.warn('[OCR] 手写擦除失败,继续使用原图:', err.message)
-      }
-    } else if (!isTextInConfigured(textinOpts)) {
-      console.warn('[OCR] TextIn 未配置,跳过专业去手写步骤（仅依赖前端预处理）')
-    }
-
-    // ─── ② TextIn 完整 OCR（公式 + 文字） ──────────────────────────────
-    let formulas = []
-    let textLines = []
-    let ocrSuccess = false
-
-    if (isTextInConfigured(textinOpts)) {
-      try {
-        const pipelineResult = await ocrPipeline(processedBuffer, textinOpts)
-        formulas = pipelineResult.formulas
-        textLines = pipelineResult.textLines
-        ocrSuccess = true
-        console.log(`[OCR] TextIn 识别完成,公式 ${formulas.length} 条,文字 ${textLines.length} 行`)
-      } catch (err) {
-        console.warn('[OCR] TextIn 流水线失败,降级到 MiniMax Vision 直接读图:', err.message)
-      }
-    }
-
-    // ─── ③ MiniMax-M3 语义解析 ─────────────────────────────────────────
-    // 把擦除后的图 + TextIn OCR 文本 + 公式 LaTeX 一起喂给 LLM
-    let parsed = null
-
-    try {
-      parsed = await semanticParse({
-        imageBase64: cleanedImageBase64,
-        ocrText: textLines.map((l) => l.text).join('\n'),
-        formulas: formulas.map((f) => f.latex).filter(Boolean),
-        subject,
+    if (!isTextInConfigured()) {
+      return res.status(500).json({
+        error: '后端未配置 TextIn 凭证,无法启用专业 OCR。请在 backend/.env 配置 TEXTIN_APP_ID/TEXTIN_SECRET_CODE',
       })
+    }
 
-      if (!parsed || !parsed.title || !parsed.textContent) {
-        throw new Error('MiniMax 返回结构不完整')
+    // ─── ① 可选：手写擦除 ────────────────────────────────────────────────
+    let workingBuffer = imageBuffer
+    let handwritingErased = false
+    if (cleanHandwriting) {
+      try {
+        workingBuffer = await eraseHandwriting(imageBuffer, { crop: 1, doc_direction: 4 })
+        handwritingErased = true
+        console.log(`[OCR] 手写擦除完成: ${workingBuffer.length} bytes`)
+      } catch (err) {
+        console.warn('[OCR] 手写擦除失败,继续原图识别:', err.message)
+        workingBuffer = imageBuffer
+      }
+    }
+
+    // ─── ② 文字识别（公式已包含在 type=formula 的 lines 里,无需额外调用） ────
+    const [textResult] = await Promise.allSettled([
+      recognizeText(workingBuffer, { recognize_graphics: 1 }),
+    ])
+
+    const textLines = textResult.status === 'fulfilled' ? textResult.value.lines : []
+
+    if (textResult.status === 'rejected') {
+      console.warn('[OCR] 文字识别失败:', textResult.reason?.message)
+    }
+
+    // 公式行(LaTeX 格式已嵌入 text)+ 普通文字行
+    const formulaLines = textLines.filter((l) => l.type === 'formula' && l.text)
+    const textOnlyLines = textLines.filter((l) => l.type !== 'formula' && l.text)
+
+    const ocrText = textLines.map((l) => l.text).filter(Boolean).join('\n')
+    const formulaLatex = formulaLines.map((l) => l.text)
+
+    console.log(`[OCR] 文字行数: ${textOnlyLines.length}, 公式行: ${formulaLines.length}`)
+
+    // ─── ③ 默认走 AI 文本合并:让 LLM 修正 OCR 字符错误并补全 LaTeX ─────────
+    // 流程:OCR 原始行 + 公式 LaTeX → LLM(Agnes text-only)→ 修正后 JSON
+    if (ocrText.length > 0 || formulaLatex.length > 0) {
+      try {
+        const parsed = await semanticParseText({
+          ocrText,
+          formulas: formulaLatex,
+          subject,
+        })
+        if (parsed && parsed.title && parsed.textContent) {
+          console.log(`[OCR] AI 文本合并成功: title="${parsed.title}", provider=${parsed._provider || '?'}`)
+          return res.json({
+            title: parsed.title,
+            knowledgePoint: parsed.knowledgePoint || '未知',
+            textContent: parsed.textContent,
+            subject,
+            detail: {
+              ocrSuccess: true,
+              handwritingErased,
+              textLineCount: textLines.length,
+              formulaCount: formulaLatex.length,
+              pipeline: 'textin+ai-text',
+              aiProvider: parsed._provider || 'unknown',
+            },
+          })
+        }
+      } catch (err) {
+        console.warn('[OCR] AI 文本合并失败,降级快速路径:', err.message)
+      }
+    } else {
+      console.warn('[OCR] TextIn 未识别出任何文字/公式,降级视觉读图')
+    }
+
+    // ─── ④ 快速路径兜底:直接用 OCR 原文拼装(可能含字符错误) ──────────
+    if (textOnlyLines.length >= 3 && formulaLines.length >= 1) {
+      const fullText = textLines.map((l) => l.text).filter(Boolean).join('\n')
+      const singleQuestionText = trimToFirstQuestion(fullText)
+      const { title: heurTitle, knowledgePoint: heurKP } = extractTitleAndKP(singleQuestionText, subject)
+      console.log(`[OCR] TextIn 直接返回(AI 失败兜底): title="${heurTitle}"`)
+      return res.json({
+        title: heurTitle,
+        knowledgePoint: heurKP,
+        textContent: singleQuestionText,
+        subject,
+        detail: {
+          ocrSuccess: true,
+          handwritingErased,
+          textLineCount: textLines.length,
+          formulaCount: formulaLatex.length,
+          pipeline: 'textin-direct',
+        },
+      })
+    }
+
+    // ─── ④ 兜底：Agnes AI 直接视觉读图 ──────────────────────────────────
+    try {
+      const parsed = await visionFallback({ imageBase64, subject })
+      if (parsed && parsed.title && parsed.textContent) {
+        console.log(`[OCR] 视觉兜底成功: title="${parsed.title}"`)
+        return res.json({
+          title: parsed.title,
+          knowledgePoint: parsed.knowledgePoint || '未知',
+          textContent: parsed.textContent,
+          subject,
+          detail: {
+            ocrSuccess: true,
+            handwritingErased,
+            textLineCount: 0,
+            formulaCount: 0,
+            pipeline: 'vision-fallback',
+          },
+        })
       }
     } catch (err) {
-      console.warn('[OCR] MiniMax 语义解析失败,降级到 Agnes AI:', err.message)
-      // 降级: 用 Agnes AI 直接读图（保留旧实现）
-      parsed = await fallbackAgnesRecognize(cleanedImageBase64, subject)
+      console.error('[OCR] 视觉兜底也失败:', err.message)
     }
 
-    res.json({
-      title: parsed.title,
-      knowledgePoint: parsed.knowledgePoint || '未知',
-      textContent: parsed.textContent,
-      subject,
-      detail: {
-        handwritingErased,
-        ocrSuccess,
-        formulas: formulas.map((f) => ({ latex: f.latex, type: f.type })),
-        textLineCount: textLines.length,
-        cleanedImageBase64: handwritingErased ? cleanedImageBase64 : undefined,
-      },
+    // ─── ⑤ 全失败：返回 422 让前端走手动输入 ──────────────────────────────
+    return res.status(422).json({
+      error: 'OCR 识别失败,请手动输入',
+      hint: '可点击"批注"涂抹掉手写内容后重试,或直接在下方输入题目',
     })
   } catch (err) {
-    console.error('[OCR] 失败:', err)
+    console.error('[OCR] 异常:', err)
     res.status(500).json({ error: err.message || 'OCR 识别失败' })
   }
 })
 
-// ─── 降级方案: Agnes AI 直接读图 ────────────────────────────────────────────
-async function fallbackAgnesRecognize(imageBase64, subject) {
-  const AGNES_API_KEY = process.env.AI_API_KEY || ''
-  const AGNES_API_BASE = process.env.AI_API_BASE || 'https://apihub.agnes-ai.com/v1'
-  const VISION_MODEL = process.env.VISION_MODEL || 'agnes-2.5-pro-alpha'
-
-  const prompt = `你是专业的数学老师,擅长 OCR 识别理科题目。请识别图片中的题目,提取:
-1. title: 题目标题(如"二次函数顶点坐标求解")
-2. knowledgePoint: 核心知识点(如"二次函数")
-3. textContent: 完整题目文字(保留数学符号如 x²、≥ 等)
-
-只返回 JSON:
-{
-  "title": "...",
-  "knowledgePoint": "...",
-  "textContent": "..."
-}`
-
-  const response = await fetch(`${AGNES_API_BASE}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${AGNES_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: VISION_MODEL,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'text', text: prompt },
-          { type: 'image_url', image_url: { url: imageBase64 } },
-        ],
-      }],
-      max_tokens: 600,
-    }),
-  })
-
-  if (!response.ok) throw new Error(`Agnes API ${response.status}`)
-
-  const data = await response.json()
-  const content = data.choices?.[0]?.message?.content?.trim() || ''
-  const parsed = extractJSON(content)
-
-  if (parsed) {
-    return {
-      title: parsed.title || '未识别',
-      knowledgePoint: parsed.knowledgePoint || '未知',
-      textContent: parsed.textContent || content,
-    }
-  }
-  return { title: content.slice(0, 50) || '未识别', knowledgePoint: '未知', textContent: content }
+// ─── 启发式：从 TextIn 输出提取标题和知识点 ────────────────────────────
+const KP_KEYWORDS = {
+  数学: ['集合', '函数', '方程', '不等式', '数列', '三角', '向量', '复数', '概率', '统计', '立体几何', '解析几何', '导数', '积分', '对数', '指数', '二次函数', '一次函数', '反比例', '绝对值', '单调性', '最值'],
+  物理: ['力', '运动', '牛顿', '能量', '动量', '电场', '磁场', '电磁', '光学', '热学', '波动', '机械波', '原子'],
+  化学: ['元素', '化合物', '反应', '氧化', '还原', '酸碱', '盐', '有机', '化学键', '分子', '原子', '离子', '电解', '沉淀'],
+  语文: ['文言文', '现代文', '阅读', '作文', '古诗', '字词', '拼音', '病句', '修辞'],
+  英语: ['语法', '词汇', '阅读', '完形', '写作', '时态', '从句', '虚拟语气'],
+  生物: ['细胞', '遗传', '基因', '生态', '进化', '光合', '呼吸', '神经', '免疫'],
 }
 
-function extractJSON(text) {
-  if (!text) return null
-  try { return JSON.parse(text) } catch {}
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
-  if (fenced) { try { return JSON.parse(fenced[1]) } catch {} }
-  let depth = 0, start = -1
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === '{') { if (depth === 0) start = i; depth++ }
-    else if (text[i] === '}') { depth--; if (depth === 0) { try { return JSON.parse(text.slice(start, i + 1)) } catch {} } }
+function extractTitleAndKP(text, subject = '数学') {
+  const lines = text.split('\n').filter(Boolean)
+  const firstLine = lines[0] || ''
+  // 标题提取：第一行前 15 字,去掉题号
+  const title = firstLine.replace(/^\s*\d+[\.、．]\s*/, '').slice(0, 20) || '未命名题目'
+
+  // 知识点匹配
+  const pool = KP_KEYWORDS[subject] || KP_KEYWORDS.数学
+  for (const kw of pool) {
+    if (text.includes(kw)) return { title, knowledgePoint: kw }
   }
-  return null
+
+  return { title, knowledgePoint: subject }
+}
+
+/**
+ * 启发式：把多题文本截断到只含第一道完整选择题
+ *
+ * 策略:找到第一个题号(1. 或 1．)作为起点,再向后找到 4 个连续的 A./B./C./D. 行
+ *      作为终点。如果没找到完整选项,就只截到第二个题号之前。
+ */
+function trimToFirstQuestion(text) {
+  const lines = text.split('\n')
+
+  // 1. 找到第一个题号行(形如"1. "或"1．"或"1、"开头,且后面跟文字)
+  const qStartRe = /^\s*1[\.\.．、]\s*\S+/
+  let startIdx = lines.findIndex((l) => qStartRe.test(l))
+  if (startIdx === -1) startIdx = 0
+
+  // 2. 从 startIdx 之后找第二个题号(2./2．)作为终止位置
+  const qNextRe = /^\s*[2-9][\.\.．、]\s*\S+/
+  let endIdx = lines.length
+  for (let i = startIdx + 1; i < lines.length; i++) {
+    if (qNextRe.test(lines[i])) {
+      endIdx = i
+      break
+    }
+  }
+
+  return lines.slice(startIdx, endIdx).join('\n').trim()
 }
 
 export default router

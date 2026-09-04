@@ -12,6 +12,7 @@ import { Router } from 'express'
 import dotenv from 'dotenv'
 import jwt from 'jsonwebtoken'
 import { findChildById, childBelongsTo } from './childHelper.js'
+import { extractJSON } from '../utils/jsonParse.js'
 dotenv.config()
 
 const router = Router()
@@ -163,38 +164,6 @@ function getMockAIResponse(prompt) {
   return JSON.stringify({ result: '这是模拟 AI 响应，配置真实 API Key 后可获得准确分析。' })
 }
 
-/**
- * 从 AI 响应中安全提取 JSON 对象
- * 支持：
- * - 直接 JSON
- * - ```json ... ``` markdown 代码块
- * - 文本里嵌入 JSON
- */
-function extractJSON(text) {
-  if (!text) return null
-  // 先尝试直接 parse
-  try {
-    return JSON.parse(text)
-  } catch {}
-
-  // 提取 ```json ... ``` 块
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
-  if (fenced) {
-    try {
-      return JSON.parse(fenced[1])
-    } catch {}
-  }
-
-  // 提取首个 { ... } 块
-  const braceMatch = text.match(/\{[\s\S]*\}/)
-  if (braceMatch) {
-    try {
-      return JSON.parse(braceMatch[0])
-    } catch {}
-  }
-
-  return null
-}
 // AI 路由 — 兼容匿名调用,但若带 JWT 则 req.userId 可用 (用于按年级出题)
 router.use((req, res, next) => {
   const authHeader = req.headers.authorization || ''

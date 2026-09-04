@@ -5,6 +5,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
 
 try {
@@ -13,7 +14,9 @@ try {
 
   ReactDOM.createRoot(root).render(
     React.createElement(React.StrictMode, null,
-      React.createElement(App, null)
+      React.createElement(ErrorBoundary, null,
+        React.createElement(App, null)
+      )
     )
   )
 } catch (err: any) {
