@@ -24,7 +24,7 @@ interface Props {
 }
 
 export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
-  const { errors, activeChildId, updateError } = useApp()
+  const { errors, activeChildId, activeChild, updateError } = useApp()
   const err = errors.find((e) => e.id === errorId)
   const [tabActive, setTabActive] = useState<TabKey>('detail')
   const [detailSubPhase, setDetailSubPhase] = useState<DetailSubPhase>('view')
@@ -67,6 +67,7 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
         knowledgePoint: err.knowledgePoint,
         subject: err.subject,
         textContent: err.textContent,
+        childId: err.childId,
       })
       setAiResult(result)
       await api.saveAiAnalysis(err.id, {
@@ -89,6 +90,7 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
         title: err.title,
         knowledgePoint: err.knowledgePoint,
         subject: err.subject,
+        childId: err.childId,
       })
       setSimilarQuestions(res.questions)
       await api.saveAiAnalysis(err.id, {
@@ -390,7 +392,7 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
                 <span className="text-lg">🎯</span>
                 <h3 className="font-extrabold text-slate-800 text-sm">同知识点变式练习</h3>
               </div>
-              <p className="text-[11px] text-slate-400">AI根据"{err.knowledgePoint}"为你生成练习题</p>
+              <p className="text-[11px] text-slate-400">AI 根据"{err.knowledgePoint}"为{activeChild ? `${activeChild.name} (${activeChild.grade})` : '当前孩子'}生成练习题</p>
             </div>
 
             {similarQuestions.length === 0 && !aiLoading && (

@@ -129,9 +129,9 @@ const api = {
     request<ErrorItem>(`/errors/${id}/ai-analysis`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   // ─── AI 服务 ────────────────────────────────────────────────────────────────
-  analyzeError: (data: { title: string; knowledgePoint: string; subject: string; textContent?: string }) =>
+  analyzeError: (data: { title: string; knowledgePoint: string; subject: string; textContent?: string; childId?: string }) =>
     request<AIAnalysisResult>('/ai/analyze', { method: 'POST', body: JSON.stringify(data) }),
-  generateSimilar: (data: { title: string; knowledgePoint: string; subject: string; difficulty?: string }) =>
+  generateSimilar: (data: { title: string; knowledgePoint: string; subject: string; difficulty?: string; childId?: string }) =>
     request<{ questions: SimilarQuestion[] }>('/ai/similar', { method: 'POST', body: JSON.stringify(data) }),
 
   // ─── 图片上传 ───────────────────────────────────────────────────────────────
