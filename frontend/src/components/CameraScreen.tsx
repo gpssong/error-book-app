@@ -243,7 +243,7 @@ export default function CameraScreen({ onNavigate }: Props) {
                 className="text-xs font-bold px-4 py-1.5 rounded-full transition-all"
                 style={cameraMode === m
                   ? { background: '#2563EB', color: '#fff' }
-                  : { background: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.7)' }
+                  : { background: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.95)' }
                 }
               >
                 {m}
@@ -283,9 +283,9 @@ export default function CameraScreen({ onNavigate }: Props) {
             </button>
             <button
               onClick={handleGallerySelect}
-              className="w-14 h-14 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center text-white/80"
+              className="w-14 h-14 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center"
             >
-              <span className="text-xs font-bold">相册</span>
+              <span className="text-xs font-bold text-white/95">相册</span>
             </button>
           </div>
         </>
