@@ -1,5 +1,22 @@
 # Changelog
 
+## v16 (2026-09-05) - 同类练习打印
+
+### 新增
+- **`PrintPreviewScreen.tsx`** 在每张错题卡底部追加「📚 同类练习」子网格：
+  - 遍历 `err.similarQuestions`，每个同类题一张子卡（蓝底区分于错题白卡）
+  - 子卡内容：`LatexPreview` 渲染 `content`（含 KaTeX 公式）+ 解答横线 + 参考答案
+  - 排版自适应：2列模式每个错题最多 2 道同类题；1列模式最多 3 道
+  - 子卡加 `print:break-inside-avoid`，打印时不被分页截断
+- **打印设置面板** 新增 "包含同类练习: 是"
+- **顶部工具栏/底部按钮/设置面板** 加 `print:hidden`，打印时不显示
+
+### 部署
+- 重新构建前端 hash `index-C7U_uDDD.js`
+- APK: `error-book-v16-similar-print.apk` (5.3MB)
+
+---
+
 ## v15 (2026-09-05) - 打印显示识别文字 + KaTeX 渲染
 
 ### 修改
