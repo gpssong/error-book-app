@@ -1,6 +1,25 @@
 # Changelog
 
-## v19 (2026-09-05) - 打印"选中 1 题却显示多题"修复
+## v20 (2026-09-05) - v19 漏 import useState 修复
+
+### 修复
+- **v19 引入的新 bug**:`AppContext.tsx` 加 `pendingPrintIds` 时只往 context value 加导出,**忘了往 `import` 加 `useState`** → 整个 AppProvider 抛 `ReferenceError: useState is not defined`,所有渲染 `useApp()` 的页面(ErrorList/PrintPreview/ErrorDetail 等)都崩。
+- **报错现象**:用户在 ErrorList / PrintPreview 等页面看到"页面开小差了 / useState is not defined"的错误边界卡片。
+- **根因**:AppContext.tsx line 12 在 `import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react'` 里**没有 useState**,但文件第 112 行用了 `const [pendingPrintIds, setPendingPrintIds] = useState<string[]>([])`。Vite build 没报错(因为模块顶层 throw 时通常静默),runtime 直接挂。
+- **v20 修复**:`import` 加上 `useState`:
+  ```ts
+  import React, { createContext, useContext, useReducer, useEffect, useCallback, useState } from 'react'
+  ```
+
+### 教训
+- 改文件时若新引入 React hook,**必须回头核对 `import` 行**
+- Vite 不会对"调用了未导入标识符"报 build 错 —— 必须靠运行时检查或单元测试覆盖
+
+### 部署
+- 重新构建前端 hash `index-DNbQZAMp.js` ✅ HTTP 200
+- APK: `error-book-v20-import-fix.apk` (5.3MB)
+
+---
 
 ### 修复
 - **`PrintPreviewScreen` 选中状态丢失 Bug**:`ErrorList` 多选模式勾选 N 道题 → 点"打印(N)" → 进入打印页 → 显示**全部孩子错题**(默认 slice(0,6))而非用户选中的 N 道。
