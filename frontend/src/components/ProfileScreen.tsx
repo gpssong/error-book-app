@@ -21,8 +21,10 @@ const BASE_URL = import.meta.env.VITE_API_URL || (() => {
   return 'http://192.168.0.14:3001'
 })()
 
+type Screen = 'dashboard' | 'childManage' | 'errorList' | 'errorDetail' | 'printPreview' | 'camera' | 'profile'
+
 interface Props {
-  onNavigate: (screen: 'dashboard') => void
+  onNavigate: (screen: Screen) => void
 }
 
 export default function ProfileScreen({ onNavigate }: Props) {
@@ -143,6 +145,14 @@ export default function ProfileScreen({ onNavigate }: Props) {
 
         {/* 功能列表 */}
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          {/* 孩子管理 */}
+          <MenuButton
+            icon={<><span className="text-base">👶</span><Icon.ChevronRight /></>}
+            label="孩子管理"
+            desc={`已添加 ${children.length} 个孩子档案 · 添加/编辑/删除`}
+            onClick={() => onNavigate('childManage')}
+          />
+          <Divider />
           {/* 账号设置 */}
           <MenuButton
             icon={<><Icon.Settings /><Icon.ChevronRight /></>}

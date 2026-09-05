@@ -18,13 +18,15 @@ import { useApp } from '@/stores/AppContext'
 import { Icon } from '@/components/Icons'
 import DrawingCanvas from '@/components/DrawingCanvas'
 import LatexPreview from '@/components/LatexPreview'
+import RegionSelector from '@/components/RegionSelector'
 import type { Subject } from '@/stores/api'
 import api from '@/stores/api'
 import { preprocessImage } from '@/utils/imagePreprocess'
+import { cropImage, type Region } from '@/utils/imageCrop'
 import 'katex/dist/katex.min.css'
 
 type Screen = 'dashboard' | 'childManage' | 'errorList' | 'errorDetail' | 'printPreview' | 'camera'
-type Phase = 'viewfinder' | 'annotating' | 'captured' | 'recognizing' | 'result'
+type Phase = 'viewfinder' | 'annotating' | 'captured' | 'regionSelect' | 'recognizing' | 'result' | 'batchResult'
 
 interface Props {
   onNavigate: (screen: Screen) => void
@@ -77,85 +79,104 @@ export default function CameraScreen({ onNavigate }: Props) {
   }
 
   // ─── AI OCR 识别 ─────────────────────────────────────────────────────────────
-  const handleRecognize = async () => {
+  // 区域选择:用户在 regionSelect 阶段框选 N 个矩形,这里对每框裁剪 + 单独 OCR
+  const [pendingRegions, setPendingRegions] = useState<Region[]>([])
+  const handleRegionsConfirm = async (regions: Region[]) => {
+    setPendingRegions(regions)
     setCameraPhase('recognizing')
     setRecognizeProgress(0)
+    setOcrSuccess(false)
 
-    // 进度条动画
     const progressTimer = setInterval(() => {
-      setRecognizeProgress((prev) => Math.min(prev + Math.random() * 15 + 5, 90))
+      setRecognizeProgress((prev) => Math.min(prev + 100 / (regions.length * 8), 92))
     }, 200)
 
     try {
-      // 使用标注后的图片进行 OCR
-      let imageBase64 = recognizedImageBase64 || capturedImageUrl
-
-      console.log('[OCR] 原始图片大小:', imageBase64?.length, 'bytes, 前50字符:', imageBase64?.slice(0, 50))
-
-      // ⚙️ OCR 前置预处理：仅做 EXIF 旋转 + 压缩到 1200px（q=0.82）
-      // 不再做二值化/裁剪/去手写,避免破坏内容（交给后端 TextIn 专业去手写）
+      // 1) 预处理原图(只做 1 次,后续裁剪直接从预处理后的图切)
+      let fullBase64 = recognizedImageBase64 || capturedImageUrl
       try {
-        console.log('[OCR] 开始图片预处理…')
-        imageBase64 = await preprocessImage(imageBase64, {
-          maxDim: 1200,
-        })
-        console.log('[OCR] 预处理完成, 新大小:', imageBase64.length, 'bytes')
+        fullBase64 = await preprocessImage(fullBase64, { maxDim: 1600 })
       } catch (preErr) {
-        console.warn('[OCR] 预处理失败，使用原图:', preErr)
+        console.warn('[OCR] 预处理失败,使用原图:', preErr)
       }
 
-      console.log('[OCR] 发送给后端的数据大小:', (imageBase64?.length || 0) / 1024, 'KB')
-      const result = await api.recognizeQuestion({ imageBase64, subject: recognizeSubject })
+      // 2) 对每框裁剪 + 独立 OCR
+      const results: Array<{ idx: number; title: string; knowledgePoint: string; textContent: string; croppedUrl: string; ok: boolean; message?: string }> = []
+      for (let i = 0; i < regions.length; i++) {
+        try {
+          const croppedUrl = await cropImage(fullBase64, regions[i])
+          // 单题裁剪图已小,无需再 preprocess
+          const r = await api.recognizeQuestion({ imageBase64: croppedUrl, subject: recognizeSubject })
+          results.push({
+            idx: i,
+            title: r.title || '',
+            knowledgePoint: r.knowledgePoint || '',
+            textContent: r.textContent || '',
+            croppedUrl,
+            ok: true,
+          })
+        } catch (e: any) {
+          console.error(`[OCR] 第 ${i + 1} 框识别失败:`, e)
+          results.push({
+            idx: i,
+            title: '',
+            knowledgePoint: '',
+            textContent: '',
+            croppedUrl: '',
+            ok: false,
+            message: e.message || '识别失败',
+          })
+        }
+      }
 
       clearInterval(progressTimer)
       setRecognizeProgress(100)
 
-      setTimeout(() => {
-        setOcrSuccess(true)
-        setRecognizedData({
-          title: result.title,
-          knowledgePoint: result.knowledgePoint,
-          textContent: result.textContent,
+      // 3) 全部入错题库(成功 + 失败的都创建,但失败的标记 title="需手动补录")
+      let successCount = 0
+      for (const r of results) {
+        const title = r.ok && r.title ? r.title : `第 ${r.idx + 1} 题${r.ok ? '' : '(需补录)'}`
+        const textContent = r.ok ? r.textContent : ''
+        await createError({
+          childId: activeChildId,
+          subject: recognizeSubject,
+          title,
+          knowledgePoint: r.knowledgePoint || '',
+          textContent,
+          imageUrl: r.croppedUrl || (recognizedImageBase64 || capturedImageUrl),
+          imageBase64: r.croppedUrl || undefined,
+          handwritingSvg: existingHandwritingSvg || undefined,
         })
-        setEditTitle(result.title)
-        setEditContent(result.textContent)
-        console.log('[OCR] setEditContent, len=', (result.textContent || '').length, 'sample=', JSON.stringify(result.textContent).slice(0, 150))
-        setCameraPhase('result')
-      }, 300)
+        if (r.ok) successCount++
+      }
+
+      setRecognizedData({
+        title: `批量识别 ${results.length} 道题`,
+        knowledgePoint: recognizeSubject,
+        textContent: results.map((r, i) =>
+          r.ok ? `第 ${i + 1} 题 ${r.title}\n${r.textContent}`
+               : `第 ${i + 1} 题 识别失败:${r.message || '未知原因'}`
+        ).join('\n\n'),
+      })
+      setOcrSuccess(successCount === results.length)
+      setTimeout(() => setCameraPhase('batchResult'), 300)
     } catch (err) {
       clearInterval(progressTimer)
       setRecognizeProgress(100)
-      console.error('OCR 识别失败:', err)
-      // 降级：允许用户手动编辑题目
-      setTimeout(() => {
-        setOcrSuccess(false)
-        setRecognizedData({
-          title: '',
-          knowledgePoint: '',
-          textContent: '',
-        })
-        setEditTitle('')
-        setEditContent('')
-        setCameraPhase('result')
-      }, 500)
+      console.error('[OCR] 批量识别失败:', err)
+      alert('识别失败,请重试')
+      setCameraPhase('regionSelect')
     }
   }
 
-  // ─── 录入错题 ────────────────────────────────────────────────────────────────
+  // 单题旧入口保留 — 兼容只拍照 1 题的用户(全图直接识别)
+  const handleRecognizeAll = async () => {
+    await handleRegionsConfirm([{ x: 0, y: 0, w: 1, h: 1 }])
+  }
+
+  // ─── 录入错题(批量场景已自动入库,这里只是导航) ──────────────────────────
   const handleAddToErrors = async () => {
-    if (!recognizedData) return
-    const finalImageUrl = recognizedImageBase64 || capturedImageUrl
-    const err = await createError({
-      childId: activeChildId,
-      subject: recognizeSubject,
-      title: editTitle || recognizedData.title,
-      knowledgePoint: recognizedData.knowledgePoint,
-      textContent: editContent || recognizedData.textContent,
-      imageUrl: finalImageUrl,
-      imageBase64: recognizedImageBase64 || undefined,
-      handwritingSvg: existingHandwritingSvg || undefined,
-    })
-    onNavigate('errorDetail')
+    onNavigate('errorList')
   }
 
   // ─── 标注完成回调 ────────────────────────────────────────────────────────────
@@ -331,11 +352,69 @@ export default function CameraScreen({ onNavigate }: Props) {
               重拍
             </button>
             <button
-              onClick={handleRecognize}
+              onClick={() => setCameraPhase('regionSelect')}
               className="flex-[2] py-3.5 rounded-2xl text-white font-extrabold text-sm flex items-center justify-center gap-2"
               style={{ background: 'linear-gradient(135deg, #2563EB, #7C3AED)' }}
             >
-              <Icon.Scan /> AI识别此题
+              <Icon.Scan /> 框选区域识别
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ── RegionSelect phase ── */}
+      {cameraPhase === 'regionSelect' && (
+        <RegionSelector
+          imageUrl={recognizedImageBase64 || capturedImageUrl}
+          onConfirm={handleRegionsConfirm}
+          onCancel={() => setCameraPhase('captured')}
+        />
+      )}
+
+      {/* ── BatchResult phase(批量识别完成) ── */}
+      {cameraPhase === 'batchResult' && recognizedData && (
+        <>
+          <div className="flex items-center justify-between px-4 pt-12 pb-3 bg-white border-b border-slate-100">
+            <button onClick={() => setCameraPhase('viewfinder')} className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-600">
+              <Icon.Back />
+            </button>
+            <span className="text-slate-800 font-extrabold text-sm">识别完成</span>
+            <div className="w-9" />
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3" style={{ background: '#F8FAFC' }}>
+            <div className="bg-white rounded-2xl p-5 shadow-sm text-center">
+              <div className="text-5xl mb-3">{ocrSuccess ? '🎉' : '⚠️'}</div>
+              <h2 className="font-extrabold text-slate-900 text-base mb-1">
+                {ocrSuccess ? '全部识别成功' : '部分识别成功'}
+              </h2>
+              <p className="text-xs text-slate-500 font-bold">
+                已自动录入 {pendingRegions.length} 道题到错题库
+              </p>
+            </div>
+
+            <div className="bg-white rounded-2xl p-4 shadow-sm">
+              <p className="text-xs font-extrabold text-slate-700 mb-3">📋 录入明细</p>
+              <LatexPreview
+                text={recognizedData.textContent}
+                className="text-xs text-slate-600 font-bold leading-relaxed"
+              />
+            </div>
+          </div>
+
+          <div className="bg-white px-4 pt-3 pb-10 flex gap-3 border-t border-slate-100">
+            <button
+              onClick={() => setCameraPhase('viewfinder')}
+              className="flex-1 py-3.5 rounded-2xl border border-slate-200 text-slate-600 font-bold text-sm"
+            >
+              再拍一组
+            </button>
+            <button
+              onClick={handleAddToErrors}
+              className="flex-[2] py-3.5 rounded-2xl text-white font-extrabold text-sm flex items-center justify-center gap-2"
+              style={{ background: 'linear-gradient(135deg, #2563EB, #7C3AED)' }}
+            >
+              ✓ 查看错题库
             </button>
           </div>
         </>

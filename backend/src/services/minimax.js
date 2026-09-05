@@ -13,6 +13,7 @@
 import dotenv from 'dotenv'
 dotenv.config()
 import { extractJSON } from '../utils/jsonParse.js'
+import { normalizeLatex, normalizeLatexLight } from '../utils/latexNormalize.js'
 
 const MINIMAX_KEY = process.env.MINIMAX_API_KEY || ''
 const MINIMAX_BASE = process.env.MINIMAX_API_BASE || 'https://api.minimaxi.com/anthropic'
@@ -38,21 +39,32 @@ LaTeX 规范(必须严格遵守):
 - 集合并/交/补:\cup / \cap / \complement,如 A\\cup B、A\\cap B、A 的补集
 - 集合属于/包含:\in / \notin / \subseteq / \supseteq
 - 分数:\\frac{a}{b} 或 \\dfrac{a}{b}(推荐 dfrac)
-- 根号:\\sqrt{a} 或 \\sqrt[n]{a}
+- 根号:\\sqrt{a} 或 \\sqrt[n]{a} — **必须带花括号**
 - 不等式:\geq / \leq / \neq / \infty
 - 区间:[a,+\\infty) 用 [a,+\\infty) 这种 LaTeX 写法
 - 自然对数 e:\\mathrm{e} 或 \\sqrt{e} 保持原样
-- 复数 i:\\mathrm{i}
+- 复数 i:\\mathrm{i}(必须用 \\mathrm 包裹,不要裸 i)
+- 对数:\\log_{2} a、\\ln x(必须带 \\log / \\ln 命令)
+- 模/共轭:|z| = \\sqrt{z \\cdot \\bar{z}},或直接 |z|
+- 三角函数:\\sin / \\cos / \\tan
+- 绝对值:|x| — 用 |x|,不用 \\abs{x}
+- 角标 x^2 必须带花括号 x^{2}
+
+**严格 LaTeX 输出规则(防止格式错乱)**:
+1. 所有数学内容必须用一对 $...$ 包裹,**不要散落 \$ 符号**
+2. 一道题的所有选项都要么全用 LaTeX,要么全用纯文本,**不要混用**
+3. 不要输出"15"这种被 OCR 误识别的数字,如果原文是 \\sqrt{ab} 请忠实输出 \\sqrt{ab}
+4. 题号 "1." 写在最前,后面紧跟题干,不要省略题干
 
 textContent 格式:
-- 题目描述(题干)+ 四个选项 A./B./C./D.
+- 题目描述(题干)+ 四个选项 A./B./C./D. (完整保留,不要省略题干)
 - 如果是选择题,把题号+题干+4 个选项全部包含进去
 - 如果是多个题目,只取第一道完整的(含它的所有选项)
 - 公式/符号必须用 LaTeX,中文/数字/字母保持原文
 - 不要输出题目之外的任何解释
 
 textContent 示例:
-"已知集合 A = {x | x^2 - 2x - 3 \\geq 0},B = {x | \\ln x \\geq \\dfrac{1}{2}},则 A\\cup B = ( )
+"1.已知集合 A = \\{x | x^2 - 2x - 3 \\geq 0\\},B = \\{x | \\ln x \\geq \\dfrac{1}{2}\\},则 A\\cup B = ( )
 A. [3,+\\infty)
 B. (-\\infty,-1] \\cup [\\sqrt{e},+\\infty)
 C. (-\\infty,-1] \\cup [3,+\\infty)
@@ -62,6 +74,7 @@ D. [-1,\\sqrt{e}]"
 - 如果 ocrText 为空,以图片为主,不要输出"无法识别"
 - 如果 ocrText 中漏字,以图片为准
 - 只输出**第一道**完整题目(不要把第二、第三题的内容混进来)
+- **重要**:如果题目包含多道题,只输出第 1 道,但第 1 道必须**完整**(题干 + 4 个选项齐全)
 
 严格返回 JSON,无任何其他文字:
 {
@@ -344,8 +357,8 @@ ${subject}
 // ─── 工具函数 ──────────────────────────────────────────────────────────────
 function normalizeParsed(p) {
   return {
-    title: String(p.title || '').slice(0, 50) || '未识别',
+    title: normalizeLatexLight(p.title || '') || '未识别',
     knowledgePoint: String(p.knowledgePoint || '').slice(0, 30) || '未知',
-    textContent: String(p.textContent || '').trim(),
+    textContent: normalizeLatex(p.textContent || '').trim(),
   }
 }

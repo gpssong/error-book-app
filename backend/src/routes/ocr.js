@@ -18,6 +18,7 @@ dotenv.config()
 
 import { isTextInConfigured, eraseHandwriting, recognizeText } from '../services/textin.js'
 import { semanticParseText, visionFallback } from '../services/minimax.js'
+import { normalizeLatex } from '../utils/latexNormalize.js'
 
 const router = Router()
 
@@ -86,6 +87,37 @@ router.post('/', async (req, res) => {
 
     console.log(`[OCR] 文字行数: ${textOnlyLines.length}, 公式行: ${formulaLines.length}`)
 
+    // ─── ③ 数学题走视觉兜底,纯文字走 LLM(2026-09-05 调整) ─────────
+    // 关键洞察:LLM 文本合并看不到原图,会"脑补"内容(如把 √(ab) 错读成 6)
+    // 数学题必须用 vision 模型直接看图,避免 LLM 瞎补
+    const hasFormula = formulaLines.length >= 1 || formulaLatex.length >= 1
+    if (hasFormula) {
+      console.log(`[OCR] 检测到 ${formulaLines.length} 条公式,数学题走视觉兜底`)
+      try {
+        const visionParsed = await visionFallback({ imageBase64, subject })
+        if (visionParsed && visionParsed.textContent) {
+          console.log(`[OCR] 视觉兜底成功: title="${visionParsed.title}"`)
+          return res.json({
+            title: visionParsed.title,
+            knowledgePoint: visionParsed.knowledgePoint || '未知',
+            textContent: visionParsed.textContent,
+            subject,
+            detail: {
+              ocrSuccess: true,
+              handwritingErased,
+              textLineCount: textLines.length,
+              formulaCount: formulaLatex.length,
+              pipeline: 'textin+vision-primary',
+              aiProvider: 'vision-primary',
+            },
+          })
+        }
+      } catch (ve) {
+        console.warn('[OCR] 视觉主路径失败,降级到 LLM 文本合并:', ve.message)
+        // fallthrough 到 LLM 路径
+      }
+    }
+
     // ─── ③ 默认走 AI 文本合并:让 LLM 修正 OCR 字符错误并补全 LaTeX ─────────
     // 流程:OCR 原始行 + 公式 LaTeX → LLM(Agnes text-only)→ 修正后 JSON
     if (ocrText.length > 0 || formulaLatex.length > 0) {
@@ -97,6 +129,38 @@ router.post('/', async (req, res) => {
         })
         if (parsed && parsed.title && parsed.textContent) {
           console.log(`[OCR] AI 文本合并成功: title="${parsed.title}", provider=${parsed._provider || '?'}`)
+
+          // ─── 低质量检测(2026-09-05):触发自动视觉兜底 ───────────────
+          // 触发条件:textContent 过短(<60字),或缺少 4 个选项
+          const text = parsed.textContent
+          const optionCount = (text.match(/^[A-D][\.\.．、]/gm) || []).length
+          const isLowQuality = text.length < 60 || optionCount < 4
+          if (isLowQuality) {
+            console.warn(`[OCR] 检测到低质量输出(len=${text.length}, options=${optionCount}),启动视觉兜底`)
+            try {
+              const visionParsed = await visionFallback({ imageBase64, subject })
+              if (visionParsed && visionParsed.textContent) {
+                console.log(`[OCR] 视觉兜底成功,覆盖原结果: title="${visionParsed.title}"`)
+                return res.json({
+                  title: visionParsed.title,
+                  knowledgePoint: visionParsed.knowledgePoint || '未知',
+                  textContent: visionParsed.textContent,
+                  subject,
+                  detail: {
+                    ocrSuccess: true,
+                    handwritingErased,
+                    textLineCount: textLines.length,
+                    formulaCount: formulaLatex.length,
+                    pipeline: 'textin+ai-text+vision-fallback',
+                    aiProvider: 'vision-fallback',
+                  },
+                })
+              }
+            } catch (ve) {
+              console.warn('[OCR] 视觉兜底失败,保留 LLM 结果:', ve.message)
+            }
+          }
+
           return res.json({
             title: parsed.title,
             knowledgePoint: parsed.knowledgePoint || '未知',
@@ -123,12 +187,13 @@ router.post('/', async (req, res) => {
     if (textOnlyLines.length >= 3 && formulaLines.length >= 1) {
       const fullText = textLines.map((l) => l.text).filter(Boolean).join('\n')
       const singleQuestionText = trimToFirstQuestion(fullText)
-      const { title: heurTitle, knowledgePoint: heurKP } = extractTitleAndKP(singleQuestionText, subject)
+      const normalizedText = normalizeLatex(singleQuestionText)
+      const { title: heurTitle, knowledgePoint: heurKP } = extractTitleAndKP(normalizedText, subject)
       console.log(`[OCR] TextIn 直接返回(AI 失败兜底): title="${heurTitle}"`)
       return res.json({
         title: heurTitle,
         knowledgePoint: heurKP,
-        textContent: singleQuestionText,
+        textContent: normalizedText,
         subject,
         detail: {
           ocrSuccess: true,

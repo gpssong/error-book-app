@@ -24,7 +24,7 @@ interface Props {
 }
 
 export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
-  const { errors, activeChildId, activeChild, updateError } = useApp()
+  const { errors, activeChildId, activeChild, updateError, deleteError, refreshErrors } = useApp()
   const err = errors.find((e) => e.id === errorId)
 
   // 使用 lazy initializer 避免 err 为 undefined 时抛错
@@ -114,6 +114,22 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
   const toggleFav = () => {
     const newFav = !err.isFavorite
     updateError(err.id, { isFavorite: newFav })
+  }
+
+  // ─── 删除错题 ──────────────────────────────────────────────────────────────
+  const [deleting, setDeleting] = useState(false)
+  const handleDelete = async () => {
+    if (deleting) return
+    if (!confirm(`确定删除错题"${err.title}"？\n该操作不可撤销。`)) return
+    setDeleting(true)
+    try {
+      await deleteError(err.id)
+      await refreshErrors()
+      onErrorId('errorList')
+    } catch (e: any) {
+      alert(e.message || '删除失败')
+      setDeleting(false)
+    }
   }
 
   // ─── 手写笔迹操作 ────────────────────────────────────────────────────────────
@@ -291,6 +307,14 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
               style={{ background: 'linear-gradient(135deg, #2563EB, #7C3AED)' }}
             >
               <Icon.AI /> AI 分步讲解此题
+            </button>
+
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="w-full py-3 rounded-2xl text-sm font-bold text-red-500 bg-white border border-red-100 flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50"
+            >
+              <Icon.Trash /> {deleting ? '删除中…' : '删除此错题'}
             </button>
           </div>
         )}

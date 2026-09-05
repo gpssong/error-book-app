@@ -1,10 +1,11 @@
 /**
  * ErrorListScreen - 错题列表页
- * 支持科目筛选、多选批量打印、搜索
+ * 支持科目筛选、多选批量打印/删除、搜索
  */
 import React, { useState } from 'react'
 import { useApp } from '@/stores/AppContext'
 import { Icon, SubjectTag, Badge } from '@/components/Icons'
+import api from '@/stores/api'
 import type { Subject } from '@/stores/api'
 
 type Screen = 'dashboard' | 'childManage' | 'errorList' | 'errorDetail' | 'printPreview' | 'camera'
@@ -14,16 +15,33 @@ interface Props {
 }
 
 export default function ErrorListScreen({ onNavigate }: Props) {
-  const { children, activeChildId, errors, activeChild } = useApp()
+  const { children, activeChildId, errors, activeChild, refreshErrors } = useApp()
   const [filterSubject, setFilterSubject] = useState<Subject | '全部'>('全部')
   const [isMultiSelect, setIsMultiSelect] = useState(false)
   const [selectedErrors, setSelectedErrors] = useState<string[]>([])
+  const [deleting, setDeleting] = useState(false)
 
   const childErrors = errors.filter((e) => e.childId === activeChildId)
   const filteredErrors = filterSubject === '全部' ? childErrors : childErrors.filter((e) => e.subject === filterSubject)
 
   const toggleSelect = (id: string) => {
     setSelectedErrors((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
+  }
+
+  const handleBatchDelete = async () => {
+    if (selectedErrors.length === 0 || deleting) return
+    if (!confirm(`确定删除选中的 ${selectedErrors.length} 道错题？\n该操作不可撤销。`)) return
+    setDeleting(true)
+    try {
+      await api.batchDeleteErrors(selectedErrors)
+      await refreshErrors()
+      setSelectedErrors([])
+      setIsMultiSelect(false)
+    } catch (e: any) {
+      alert(e.message || '批量删除失败')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const subjects: (Subject | '全部')[] = ['全部', '数学', '语文', '英语', '物理', '化学', '生物']
@@ -90,9 +108,18 @@ export default function ErrorListScreen({ onNavigate }: Props) {
             <span className="text-[10px] text-slate-400">已选 {selectedErrors.length} 道</span>
           </div>
           {selectedErrors.length > 0 && (
-            <button onClick={() => onNavigate('printPreview')} className="flex items-center gap-1.5 text-xs font-bold text-[#F97316]">
-              <Icon.Print /> 批量打印
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={() => onNavigate('printPreview')} className="flex items-center gap-1 text-xs font-bold text-[#F97316]">
+                <Icon.Print /> 打印
+              </button>
+              <button
+                onClick={handleBatchDelete}
+                disabled={deleting}
+                className="flex items-center gap-1 text-xs font-bold text-red-500 disabled:opacity-50"
+              >
+                <Icon.Trash /> {deleting ? '删除中…' : '删除'}
+              </button>
+            </div>
           )}
         </div>
       )}
