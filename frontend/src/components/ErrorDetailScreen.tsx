@@ -485,11 +485,18 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
           <Icon.Print /> 打印此题
         </button>
         <button
-          onClick={() => setTabActive('ai')}
-          className="flex-1 py-3 rounded-2xl text-sm font-extrabold text-white flex items-center justify-center gap-2"
+          onClick={() => {
+            if (tabActive !== 'ai') {
+              setTabActive('ai')
+            } else {
+              handleAnalyze()
+            }
+          }}
+          disabled={aiLoading}
+          className="flex-1 py-3 rounded-2xl text-sm font-extrabold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50"
           style={{ background: 'linear-gradient(135deg, #2563EB, #7C3AED)' }}
         >
-          <Icon.AI /> AI讲解
+          <Icon.AI /> {aiLoading ? '分析中...' : 'AI讲解'}
         </button>
       </div>
     </div>
