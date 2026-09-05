@@ -1,5 +1,21 @@
 # Changelog
 
+## v21 (2026-09-05) - ErrorDetail 详情页"打印此题"也走 selectedIds
+
+### 修复
+- **v19/v20 修复漏的入口**:`ErrorDetailScreen` 底部"打印此题"按钮 (`onErrorId('printPreview')`) 之前**没有**调 `setPendingPrintIds`,从详情页进打印页时 `pendingPrintIds = []` → 走默认全量显示 → 用户看到"明明打印 1 题却有 4 道题"。
+- **v21 修复**:按钮 onClick 时先把 `[errorId]` 写进 `pendingPrintIds`:
+  ```tsx
+  onClick={() => { setPendingPrintIds([errorId]); onErrorId('printPreview') }}
+  ```
+  打印页用 `useState<string[]>(pendingPrintIds)` 读初值,自动只显示这一道。
+
+### 部署
+- 重新构建前端 hash `index-CHxKNV9f.js` ✅ HTTP 200
+- APK: `error-book-v21-detail-print.apk` (5.3MB)
+
+---
+
 ## v20 (2026-09-05) - v19 漏 import useState 修复
 
 ### 修复

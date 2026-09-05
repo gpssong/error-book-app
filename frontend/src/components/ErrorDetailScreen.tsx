@@ -24,7 +24,7 @@ interface Props {
 }
 
 export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
-  const { errors, activeChildId, activeChild, updateError, deleteError, refreshErrors } = useApp()
+  const { errors, activeChildId, activeChild, updateError, deleteError, refreshErrors, setPendingPrintIds } = useApp()
   const err = errors.find((e) => e.id === errorId)
 
   // 使用 lazy initializer 避免 err 为 undefined 时抛错
@@ -477,7 +477,7 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
       {/* Bottom action */}
       <div className="bg-white border-t border-slate-100 px-4 py-3 flex gap-3 shrink-0">
         <button
-          onClick={() => onErrorId('printPreview')}
+          onClick={() => { setPendingPrintIds([errorId]); onErrorId('printPreview') }}
           className="flex-1 py-3 rounded-2xl border border-slate-200 text-sm font-bold text-slate-600 flex items-center justify-center gap-2"
         >
           <Icon.Print /> 打印此题
