@@ -9,7 +9,7 @@
  * 2. 任意 API 返回 401 时,通过 emitAuthRequired 自动跳回登录页
  * 3. 监听 storage 事件，支持多标签页同步退出
  */
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { AppProvider, useApp } from './stores/AppContext'
 import DashboardScreen from './components/DashboardScreen'
 import ErrorListScreen from './components/ErrorListScreen'
@@ -20,10 +20,15 @@ import CameraScreen from './components/CameraScreen'
 import LoginScreen from './components/LoginScreen'
 import RegisterScreen from './components/RegisterScreen'
 import ProfileScreen from './components/ProfileScreen'
+import UpgradeModal from './components/UpgradeModal'
+import AIPracticeScreen from './components/AIPracticeScreen'
 import { Icon } from './components/Icons'
 import { auth, AUTH_EVENT } from './stores/auth'
+import { App as CapacitorApp } from '@capacitor/app'
+import { Capacitor } from '@capacitor/core'
+import { PAYWALL_EVENT } from './stores/api'
 
-type Screen = 'dashboard' | 'childManage' | 'errorList' | 'errorDetail' | 'printPreview' | 'camera' | 'profile'
+type Screen = 'dashboard' | 'childManage' | 'errorList' | 'errorDetail' | 'printPreview' | 'camera' | 'profile' | 'aiPractice'
 type AuthScreen = 'login' | 'register'
 
 function AppContent() {
@@ -31,6 +36,22 @@ function AppContent() {
   const [screen, setScreen] = useState<Screen>('dashboard')
   const [selectedErrorId, setSelectedErrorId] = useState<string | null>(null)
   const [navActive, setNavActive] = useState<'home' | 'list' | 'ai' | 'profile'>('home')
+  // 始终指向最新 screen 值,供 backButton 回调读(避免闭包陷阱)
+  const screenRef = useRef(screen)
+  useEffect(() => { screenRef.current = screen }, [screen])
+
+  // ─── 付费墙弹窗 ──────────────────────────────────────────────────────────────
+  const [paywallAction, setPaywallAction] = useState<'ocr' | 'ai_analyze' | 'ai_similar' | null>(null)
+  const [showPaywall, setShowPaywall] = useState(false)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const action = (e as CustomEvent).detail?.action ?? 'ocr'
+      setPaywallAction(action)
+      setShowPaywall(true)
+    }
+    window.addEventListener(PAYWALL_EVENT, handler)
+    return () => window.removeEventListener(PAYWALL_EVENT, handler)
+  }, [])
 
   // 登录状态（用 getter 保证每次读取最新值，支持多标签页同步）
   const checkLoggedIn = () => auth.isLoggedIn()
@@ -63,6 +84,24 @@ function AppContent() {
   const handleGotoRegister = () => setAuthScreen('register')
   const handleGotoLogin = () => setAuthScreen('login')
 
+  // Android 物理返回键:任何页面都先回到首页,首页再返回才退出 App
+  useEffect(() => {
+    if (Capacitor.getPlatform() !== 'android') return
+    let handler: { remove: () => void } | null = null
+    CapacitorApp.addListener('backButton', () => {
+      if (screenRef.current !== 'dashboard') {
+        // 拦截:返回首页 + 清掉详情 id,避免下次残留
+        setSelectedErrorId(null)
+        setNavActive('home')
+        setScreen('dashboard')
+      } else {
+        // 首页:真正退出 App
+        void CapacitorApp.exitApp()
+      }
+    }).then((h) => { handler = h })
+    return () => { handler?.remove() }
+  }, [])
+
   // 未登录：渲染登录/注册
   if (!loggedIn) {
     return authScreen === 'login' ? (
@@ -80,7 +119,7 @@ function AppContent() {
   const navItems = [
     { key: 'home' as const, label: '首页', icon: <Icon.Home />, screen: 'dashboard' as Screen },
     { key: 'list' as const, label: '错题', icon: <Icon.List />, screen: 'errorList' as Screen },
-    { key: 'ai' as const, label: 'AI练习', icon: <Icon.AI />, screen: 'errorList' as Screen },
+    { key: 'ai' as const, label: 'AI练习', icon: <Icon.AI />, screen: 'aiPractice' as Screen },
     { key: 'profile' as const, label: '我的', icon: <Icon.Person />, screen: 'profile' as Screen },
   ]
 
@@ -101,7 +140,7 @@ function AppContent() {
   )
 
   // 根据当前屏幕决定渲染内容和是否显示底部导航
-  const showNav = !['errorDetail', 'camera', 'printPreview'].includes(screen)
+  const showNav = !['errorDetail', 'camera', 'printPreview', 'aiPractice'].includes(screen)
 
   return (
     <div className="flex flex-col" style={{ height: '100%' }}>
@@ -117,8 +156,17 @@ function AppContent() {
         {screen === 'printPreview' && <PrintPreviewScreen onNavigate={goTo} />}
         {screen === 'camera' && <CameraScreen onNavigate={goTo} />}
         {screen === 'profile' && <ProfileScreen onNavigate={goTo} />}
+        {screen === 'aiPractice' && <AIPracticeScreen onNavigate={goTo} />}
       </div>
       {showNav && <BottomNav />}
+
+      {/* 付费墙弹窗 */}
+      {showPaywall && (
+        <UpgradeModal
+          onClose={() => setShowPaywall(false)}
+          initialAction={paywallAction}
+        />
+      )}
     </div>
   )
 }

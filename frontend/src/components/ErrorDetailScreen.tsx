@@ -11,6 +11,7 @@ import React, { useState, useCallback, useEffect } from 'react'
 import { useApp } from '@/stores/AppContext'
 import { Icon, SubjectTag } from '@/components/Icons'
 import DrawingCanvas from '@/components/DrawingCanvas'
+import LatexPreview from '@/components/LatexPreview'
 import type { ErrorItem, SimilarQuestion, AIAnalysisResult } from '@/stores/api'
 import api from '@/stores/api'
 
@@ -367,11 +368,12 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
                         </div>
                         <span className="font-extrabold text-sm text-slate-800">{step.title}</span>
                       </div>
-                      <p className="text-sm text-slate-600 font-medium leading-relaxed whitespace-pre-line">
-                        {idx === 0 ? aiResult.mistakeReason
+                      <LatexPreview
+                        text={idx === 0 ? aiResult.mistakeReason
                           : idx === 1 ? aiResult.knowledgeExplained
                           : aiResult.stepByStepGuide}
-                      </p>
+                        className="text-sm text-slate-600 font-medium leading-relaxed"
+                      />
                     </div>
                   ))
                 : aiSteps.slice(0, aiStep + 1).map((step, idx) => (

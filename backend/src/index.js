@@ -22,6 +22,9 @@ import aiRoutes from './routes/ai.js'
 import uploadRoutes from './routes/upload.js'
 import ocrRoutes from './routes/ocr.js'
 import authRoutes from './routes/auth.js'
+import subscriptionRoutes from './routes/subscription.js'
+import configRoutes from './routes/config.js'
+import adminRoutes from './routes/admin.js'
 import { connectDB } from './schemas/db.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -40,9 +43,13 @@ app.use('/api/auth', authRoutes)
 app.use('/api/ai', aiRoutes)         // AI 接口本身无敏感数据，可公开
 app.use('/api/upload', uploadRoutes)
 app.use('/api/ocr', ocrRoutes)
+app.use('/api/config', configRoutes) // 全局配置（账号/Keys）
+// 管理员接口（需要 JWT + isAdmin）
+app.use('/api/admin', adminRoutes)
 // 受保护接口（需要 JWT）
 app.use('/api/children', childRoutes)
 app.use('/api/errors', errorQuestionRoutes)
+app.use('/api/subscription', subscriptionRoutes)
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

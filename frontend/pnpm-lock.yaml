@@ -8,6 +8,15 @@ importers:
 
   .:
     dependencies:
+      '@capacitor/app':
+        specifier: ^6.0.3
+        version: 6.0.3(@capacitor/core@8.5.1)
+      '@capacitor/core':
+        specifier: ^8.5.1
+        version: 8.5.1
+      '@dimer47/capacitor-plugin-printer':
+        specifier: ^2.0.4
+        version: 2.0.4(@capacitor/core@8.5.1)
       katex:
         specifier: 0.16.11
         version: 0.16.11
@@ -47,6 +56,19 @@ importers:
         version: 8.2.2(@types/node@22.20.1)(jiti@2.7.0)
 
 packages:
+
+  '@capacitor/app@6.0.3':
+    resolution: {integrity: sha512-4gFUCbcVz0N/YYN32OBFerocWXslIv3Nc90gDiRsBkJc0plwK6kIUT6PKa5WtW2kfhteUeCVXQbvArH2fH+0Ug==}
+    peerDependencies:
+      '@capacitor/core': ^6.0.0
+
+  '@capacitor/core@8.5.1':
+    resolution: {integrity: sha512-IOQ7ynG1qgrJ/RLuCO3WgyRGmkmmG/cdStRR4ftU2dWEN1FdtLrnI/XpZmZuUsOEHEnzBRJY/PmRH8eTLiXfhA==}
+
+  '@dimer47/capacitor-plugin-printer@2.0.4':
+    resolution: {integrity: sha512-pEl9ZPg16DhkU+3lcIysZnoFOFmuac5tUXnvAqiUauyzcO6eEgCD5AB/6Yr4SB6WonsDnfDaBkEw1ZEa3skObA==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -575,6 +597,9 @@ packages:
     resolution: {integrity: sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==}
     engines: {node: '>=12.0.0'}
 
+  tslib@2.8.1:
+    resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
+
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
     engines: {node: '>=14.17'}
@@ -627,6 +652,18 @@ packages:
         optional: true
 
 snapshots:
+
+  '@capacitor/app@6.0.3(@capacitor/core@8.5.1)':
+    dependencies:
+      '@capacitor/core': 8.5.1
+
+  '@capacitor/core@8.5.1':
+    dependencies:
+      tslib: 2.8.1
+
+  '@dimer47/capacitor-plugin-printer@2.0.4(@capacitor/core@8.5.1)':
+    dependencies:
+      '@capacitor/core': 8.5.1
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -996,6 +1033,8 @@ snapshots:
     dependencies:
       fdir: 6.5.0(picomatch@4.0.7)
       picomatch: 4.0.7
+
+  tslib@2.8.1: {}
 
   typescript@5.9.3: {}
 

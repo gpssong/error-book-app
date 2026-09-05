@@ -336,6 +336,36 @@
       font-size: 13px;
     }
     .empty .icon { font-size: 32px; margin-bottom: 8px; }
+  
+    /* ─── Admin Panel ─── */
+    .admin-user-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px;
+      border: 1.5px solid #E2E8F0;
+      border-radius: 12px;
+      margin-bottom: 10px;
+      background: #FAFBFC;
+    }
+    .admin-user-info { flex: 1; min-width: 0; }
+    .admin-user-name { font-size: 14px; font-weight: 700; }
+    .admin-user-email { font-size: 12px; color: #64748B; }
+    .admin-user-joined { font-size: 11px; color: #94A3B8; margin-top: 2px; }
+    .plan-badge {
+      font-size: 10px; font-weight: 700;
+      padding: 3px 8px; border-radius: 6px;
+      display: inline-block; margin-bottom: 4px;
+    }
+    .plan-free  { background: #F1F5F9; color: #64748B; }
+    .plan-pro   { background: #FEF3C7; color: #92400E; }
+    .plan-family{ background: #EDE9FE; color: #5B21B6; }
+    .admin-user-actions { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+    .admin-user-actions .btn { white-space: nowrap; }
+    .subscription-detail {
+      font-size: 11px; color: #64748B; margin-top: 4px;
+    }
+    .subscription-detail span { color: #1E293B; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -353,6 +383,17 @@
     <button class="tab" data-tab="ai" onclick="switchTab('ai')">🤖 AI Key</button>
     <button class="tab" data-tab="ocr" onclick="switchTab('ocr')">📷 OCR</button>
     <button class="tab" data-tab="fallback" onclick="switchTab('fallback')">🔄 备用</button>
+    <button class="tab" id="adminTabBtn" style="display:none" data-tab="admin" onclick="switchTab('admin')">🛡️ 管理员</button>
+  </div>
+
+  <!-- 管理员面板（仅管理员可见，通过 Token 鉴权） -->
+  <div id="tab-admin" class="tab-content hidden">
+    <div class="card">
+      <div class="card-title"><span class="icon">👥</span> 已注册用户
+        <span style="font-size:11px;font-weight:400;color:#94A3B8;margin-left:6px">用任意管理员账号登录后自动显示</span>
+      </div>
+      <div id="adminUserList"></div>
+    </div>
   </div>
 
   <!-- Tab 1: 账号 -->
@@ -541,33 +582,89 @@
   </div>
 </div>
 
+
+<!-- 编辑套餐 Modal -->
+<div class="modal-overlay" id="editSubModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('editSubModal')">&times;</button>
+    <div class="modal-title">编辑用户套餐</div>
+    <div style="font-size:13px;color:#64748B;margin-bottom:12px">用户：<span id="editSubUsername" style="font-weight:700;color:#1E293B"></span></div>
+    <input type="hidden" id="editSubUserId" />
+    <div class="field">
+      <label>套餐类型</label>
+      <select id="editSubPlan" onchange="document.getElementById('childrenCountField').style.display=(this.value==='family')?'block':'none'">
+        <option value="free">免费版（每日 OCR 10次 / AI 3次）</option>
+        <option value="pro">Pro ¥18/月（无限 AI）</option>
+        <option value="family">Family ¥28/月（无限 AI + 5 个子账号）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>到期时间</label>
+      <input type="date" id="editSubExpiresAt" placeholder="留空 = 永久有效" />
+    </div>
+    <div class="field" id="childrenCountField" style="display:none">
+      <label>最大孩子数</label>
+      <input type="number" id="editSubChildrenCount" min="1" max="10" value="1" />
+      <div class="field-hint">免费版/Pro 最多 1 个，Family 最多 5 个</div>
+    </div>
+    <div class="status" id="editSubStatus"></div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="closeModal('editSubModal')">取消</button>
+      <button class="btn btn-primary" onclick="submitEditSub()">保存</button>
+    </div>
+  </div>
+</div>
+
 <div class="footer">
-  配置保存在浏览器本地 Storage<br>
+  配置保存在服务器<br>
   <a href="#" onclick="clearAll(); return false;">清除所有配置</a>
 </div>
 
 <script>
-const STORAGE_KEYS = {
-  accounts: 'eb_accounts',
-  keys:     'eb_keys',
-  current:  'eb_current_account',
-  settings: 'eb_settings',
-}
+// ─── 数据层：服务端 API + 本地缓存 ─────────────────────────────────────────────
+let accounts    = []
+let keys        = []
+let current     = null
+let settings    = { autoFallback: true, parallel: false, verbose: false }
 
-function loadData(key, fallback = null) {
+async function loadConfig() {
   try {
-    const raw = localStorage.getItem(key)
-    return raw ? JSON.parse(raw) : fallback
-  } catch { return fallback }
-}
-function saveData(key, data) {
-  localStorage.setItem(key, JSON.stringify(data))
+    const resp = await fetch(`${getApiBase()}/api/config`)
+    const data = await resp.json()
+    accounts    = data.accounts || []
+    keys        = data.keys || []
+    current     = data.current || null
+    settings    = data.settings || { autoFallback: true, parallel: false, verbose: false }
+    syncToggles()
+    renderAccounts()
+    renderPipelineStatus()
+    loadAdmin()
+  } catch (e) {
+    showStatus(document.getElementById('accountStatus'), '加载配置失败: ' + e.message, 'error')
+  }
 }
 
-let accounts    = loadData(STORAGE_KEYS.accounts, [])
-let keys        = loadData(STORAGE_KEYS.keys, [])
-let current     = loadData(STORAGE_KEYS.current, null)
-let settings    = loadData(STORAGE_KEYS.settings, { autoFallback: true, parallel: false, verbose: false })
+async function saveConfig() {
+  try {
+    await fetch(`${getApiBase()}/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accounts, keys, current, settings }),
+    })
+  } catch (e) {
+    showStatus(document.getElementById('accountStatus'), '保存失败: ' + e.message, 'error')
+  }
+}
+
+function syncToggles() {
+  const setToggle = (id, val) => {
+    const el = document.getElementById(id)
+    if (el) el.classList.toggle('on', !!val)
+  }
+  setToggle('toggleAutoFallback', settings.autoFallback)
+  setToggle('toggleParallel', settings.parallel)
+  setToggle('toggleVerbose', settings.verbose)
+}
 
 // ─── Tabs ───
 function switchTab(name) {
@@ -578,6 +675,7 @@ function switchTab(name) {
   if (name === 'ai')        renderKeys('ai')
   if (name === 'ocr')       { renderKeys('ocr'); renderPipelineStatus() }
   if (name === 'fallback')  { renderKeys('fallback'); populateTestSelect() }
+  if (name === 'admin')    renderAdminUsers()
 }
 
 // ─── Accounts ───
@@ -700,8 +798,7 @@ async function submitAccount() {
       else accounts.push(account)
     }
     current = account
-    saveData(STORAGE_KEYS.accounts, accounts)
-    saveData(STORAGE_KEYS.current, current)
+    await saveConfig()
     closeModal('accountModal')
     renderAccounts()
     showStatus(statusEl, accountMode === 'login' ? '✅ 登录成功' : '✅ 注册成功', 'success')
@@ -712,7 +809,7 @@ async function submitAccount() {
 
 function selectAccount(i) {
   current = accounts[i]
-  saveData(STORAGE_KEYS.current, current)
+  saveConfig()
   renderAccounts()
 }
 
@@ -720,14 +817,13 @@ function removeAccount(i) {
   if (!confirm('确定删除该账号？')) return
   accounts.splice(i, 1)
   if (current && current.id === accounts[i]?.id) current = null
-  saveData(STORAGE_KEYS.accounts, accounts)
-  saveData(STORAGE_KEYS.current, current)
+  saveConfig()
   renderAccounts()
 }
 
 function logout() {
   current = null
-  saveData(STORAGE_KEYS.current, current)
+  saveConfig()
   renderAccounts()
 }
 
@@ -867,28 +963,28 @@ function submitKey() {
     })
   }
 
-  saveData(STORAGE_KEYS.keys, keys)
+  saveConfig()
   closeModal('keyModal')
   renderKeys(keyCategory)
 }
 
 function setCurrentKey(id) {
   keys.forEach(k => { k.current = k.id === id })
-  saveData(STORAGE_KEYS.keys, keys)
+  saveConfig()
   renderKeys(keys.find(k => k.id === id)?.category)
 }
 
 function toggleKeyEnabled(id) {
   const k = keys.find(x => x.id === id)
   if (k) k.enabled = !k.enabled
-  saveData(STORAGE_KEYS.keys, keys)
+  saveConfig()
   renderKeys(k?.category)
 }
 
 function deleteKey(id) {
   if (!confirm('确定删除此 Key？')) return
   keys = keys.filter(k => k.id !== id)
-  saveData(STORAGE_KEYS.keys, keys)
+  saveConfig()
   const cat = keys.find(k => k.id === id)?.category
   renderKeys(cat)
 }
@@ -896,11 +992,9 @@ function deleteKey(id) {
 // ─── Pipeline Status ───
 function renderPipelineStatus() {
   const el = document.getElementById('pipelineStatus')
-  // 直接从 localStorage 读取 OCR keys 状态（TextIn/MiniMax 现在由浏览器管理）
-  let ocrKeys = []
-  try { ocrKeys = JSON.parse(localStorage.getItem('eb_keys') || '[]') } catch {}
-  const textinKey  = ocrKeys.find(k => k.category === 'ocr' && k.provider === 'textin' && k.enabled)
-  const minimaxKey = ocrKeys.find(k => k.category === 'ocr' && k.provider === 'minimax' && k.enabled)
+  const ocrKeys = keys.filter(k => k.category === 'ocr')
+  const textinKey  = ocrKeys.find(k => k.provider === 'textin' && k.enabled)
+  const minimaxKey = ocrKeys.find(k => k.provider === 'minimax' && k.enabled)
 
   const textinOk  = !!textinKey
   const minimaxOk = !!minimaxKey
@@ -991,7 +1085,7 @@ function toggleSetting(el) {
   el.classList.toggle('on')
   const key = el.id.replace('toggle', '').toLowerCase()
   settings[key] = el.classList.contains('on')
-  saveData(STORAGE_KEYS.settings, settings)
+  saveConfig()
 }
 
 // ─── Helpers ───
@@ -1043,11 +1137,156 @@ function formatDate(iso) {
   if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前'
   return Math.floor(diff / 86400000) + '天前'
 }
-function clearAll() {
+async function clearAll() {
   if (!confirm('确定清除所有配置？此操作不可撤销。')) return
-  Object.values(STORAGE_KEYS).forEach(k => localStorage.removeItem(k))
-  location.reload()
+  try {
+    await fetch(`${getApiBase()}/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accounts: [], keys: [], current: null, settings: { autoFallback: true, parallel: false, verbose: false } }),
+    })
+    location.reload()
+  } catch (e) {
+    alert('清除失败: ' + e.message)
+  }
 }
+
+
+// ─── Admin Panel ───
+let adminUsers = []
+
+async function loadAdmin() {
+  if (!current?.id) return
+  // 用存储的 token 检查是否为管理员
+  const resp = await fetch(getApiBase() + '/api/auth/me', {
+    headers: { Authorization: 'Bearer ' + current.token },
+  })
+  if (!resp.ok) return
+  const user = await resp.json()
+  if (!user.isAdmin) return
+  document.getElementById('adminTabBtn').style.display = ''
+  adminUsers = [] // 清空旧数据，reloadAdmin 时会重新拉取
+  renderAdminUsers()
+}
+
+async function renderAdminUsers() {
+  if (!current?.token) return
+  const resp = await fetch(getApiBase() + '/api/admin/users', {
+    headers: { Authorization: 'Bearer ' + current.token },
+  })
+  if (!resp.ok) return
+  const data = await resp.json()
+  adminUsers = data.users || []
+  const list = document.getElementById('adminUserList')
+  if (!adminUsers.length) {
+    list.innerHTML = '<div class="empty"><div class="icon">👤</div><div>暂无注册用户</div></div>'
+    return
+  }
+  list.innerHTML = adminUsers.map(u => {
+    const planClass = u.subscription?.plan === 'pro' ? 'plan-pro' : u.subscription?.plan === 'family' ? 'plan-family' : 'plan-free'
+    const planLabel = u.subscription?.plan === 'pro' ? 'Pro' : u.subscription?.plan === 'family' ? 'Family' : '免费版'
+    const expiresStr = u.subscription?.expiresAt ? formatDate(u.subscription.expiresAt) : '永久'
+    const today = new Date().toISOString().slice(0, 10)
+    return `
+    <div class="admin-user-card">
+      <div class="avatar">${(u.username || '?')[0].toUpperCase()}</div>
+      <div class="admin-user-info">
+        <div class="admin-user-name">${esc(u.displayName || u.username)}</div>
+        <div class="admin-user-email">${esc(u.email || '')}</div>
+        <span class="plan-badge ${planClass}">${planLabel}</span>
+        <div class="subscription-detail">
+          到期时间：<span>${expiresStr}</span> · 孩子数：<span>${u.subscription?.childrenCount || 1}</span>
+        </div>
+        <div class="subscription-detail">
+          注册：<span>${formatDate(u.createdAt)}</span>
+        </div>
+      </div>
+      <div class="admin-user-actions">
+        <button class="btn btn-primary btn-sm" onclick="openEditSub('${u.id}')">📦 套餐</button>
+        <button class="btn btn-ghost btn-sm" onclick="resetDaily('${u.id}', this)">🔄 重置额度</button>
+        <button class="btn btn-sm" style="background:#FEF2F2;color:#DC2626;border:1.5px solid #FECACA" onclick="deleteUser('${u.id}','${esc(u.displayName||u.username)}')">🗑️ 删除</button>
+      </div>
+    </div>`
+  }).join('')
+}
+
+function openEditSub(userId) {
+  const u = adminUsers.find(x => x.id === userId)
+  if (!u) return
+  document.getElementById('editSubUserId').value = userId
+  document.getElementById('editSubUsername').textContent = esc(u.displayName || u.username)
+  document.getElementById('editSubPlan').value = u.subscription?.plan || 'free'
+  document.getElementById('editSubExpiresAt').value = u.subscription?.expiresAt
+    ? u.subscription.expiresAt.slice(0, 10)
+    : ''
+  document.getElementById('editSubChildrenCount').value = u.subscription?.childrenCount || 1
+  // 根据套餐显示/隐藏孩子数字段
+  document.getElementById('childrenCountField').style.display = (document.getElementById('editSubPlan').value === 'family') ? 'block' : 'none'
+  document.getElementById('editSubModal').classList.add('show')
+}
+
+async function submitEditSub() {
+  const userId = document.getElementById('editSubUserId').value
+  const plan = document.getElementById('editSubPlan').value
+  const expiresAt = document.getElementById('editSubExpiresAt').value
+  const childrenCount = parseInt(document.getElementById('editSubChildrenCount').value) || 1
+  const statusEl = document.getElementById('editSubStatus')
+  statusEl.textContent = '保存中...'
+  statusEl.className = 'status show info'
+  try {
+    const resp = await fetch(getApiBase() + '/api/admin/users/' + userId + '/subscription', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + current.token },
+      body: JSON.stringify({ plan, expiresAt, childrenCount }),
+    })
+    const data = await resp.json()
+    if (!resp.ok) throw new Error(data.error || '保存失败')
+    closeModal('editSubModal')
+    renderAdminUsers()
+    statusEl.textContent = '✅ 套餐已更新'
+    statusEl.className = 'status show success'
+    setTimeout(() => statusEl.classList.remove('show'), 3000)
+  } catch (e) {
+    statusEl.textContent = '❌ ' + e.message
+    statusEl.className = 'status show error'
+  }
+}
+
+async function resetDaily(userId, btn) {
+  if (btn.disabled) return
+  btn.disabled = true
+  btn.textContent = '重置中...'
+  try {
+    const resp = await fetch(getApiBase() + '/api/admin/users/' + userId + '/reset-daily', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + current.token },
+    })
+    const data = await resp.json()
+    if (!resp.ok) throw new Error(data.error || '重置失败')
+    btn.textContent = '✅ 已重置'
+    setTimeout(() => { btn.disabled = false; btn.textContent = '🔄 重置额度' }, 1500)
+  } catch (e) {
+    alert('❌ ' + e.message)
+    btn.disabled = false
+    btn.textContent = '🔄 重置额度'
+  }
+}
+
+async function deleteUser(userId, username) {
+  if (!confirm(`确定要删除用户「${username}」吗？\n\n此操作将同时删除该用户下的所有孩子档案及错题记录，不可撤销。`)) return
+  try {
+    const resp = await fetch(getApiBase() + '/api/admin/users/' + userId, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + current.token },
+    })
+    const data = await resp.json()
+    if (!resp.ok) throw new Error(data.error || '删除失败')
+    renderAdminUsers()
+  } catch (e) {
+    alert('❌ ' + e.message)
+  }
+}
+
 
 document.querySelectorAll('.modal-overlay').forEach(overlay => {
   overlay.addEventListener('click', e => {
@@ -1055,7 +1294,8 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
   })
 })
 
-renderAccounts()
+// 页面加载时从服务端拉取配置
+loadConfig()
 </script>
 </body>
 </html>

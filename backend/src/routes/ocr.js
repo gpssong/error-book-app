@@ -19,6 +19,8 @@ dotenv.config()
 import { isTextInConfigured, eraseHandwriting, recognizeText } from '../services/textin.js'
 import { semanticParseText, visionFallback } from '../services/minimax.js'
 import { normalizeLatex } from '../utils/latexNormalize.js'
+import { authMiddleware } from '../middleware/auth.js'
+import { checkDailyLimit } from '../middleware/paywall.js'
 
 const router = Router()
 
@@ -30,7 +32,8 @@ router.get('/status', (_req, res) => {
   })
 })
 
-router.post('/', async (req, res) => {
+// 需要登录 + 付费额度检查
+router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req, res) => {
   try {
     const { imageBase64, subject = '数学', cleanHandwriting = false } = req.body || {}
 

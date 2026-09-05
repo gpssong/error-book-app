@@ -10,6 +10,9 @@
     "format": "oxfmt"
   },
   "dependencies": {
+    "@capacitor/app": "^6.0.3",
+    "@capacitor/core": "^8.5.1",
+    "@dimer47/capacitor-plugin-printer": "^2.0.4",
     "katex": "0.16.11",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

@@ -13,6 +13,8 @@ import dotenv from 'dotenv'
 import jwt from 'jsonwebtoken'
 import { findChildById, childBelongsTo } from './childHelper.js'
 import { extractJSON } from '../utils/jsonParse.js'
+import { authMiddleware, verifyToken } from '../middleware/auth.js'
+import { checkDailyLimit } from '../middleware/paywall.js'
 dotenv.config()
 
 const router = Router()
@@ -20,7 +22,7 @@ const AI_PROVIDER = process.env.AI_PROVIDER || 'openai'
 const AI_API_KEY = process.env.AI_API_KEY || ''
 const AI_API_BASE = process.env.AI_API_BASE || 'https://api.openai.com/v1'
 const AI_MODEL = process.env.AI_MODEL || 'gpt-4o-mini'
-const SIMILAR_COUNT = Number(process.env.SIMILAR_QUESTION_COUNT) || 3
+const SIMILAR_COUNT = Number(process.env.SIMILAR_QUESTION_COUNT) || 8
 
 /**
  * 学段 → 难度 / 知识点范围 / 严禁超纲提示
@@ -110,6 +112,7 @@ async function callAI(prompt, systemPrompt = '') {
         messages,
         temperature: 0.7,
       }),
+      signal: AbortSignal.timeout(150000),
     })
 
     if (!response.ok) {
@@ -164,22 +167,10 @@ function getMockAIResponse(prompt) {
   return JSON.stringify({ result: '这是模拟 AI 响应，配置真实 API Key 后可获得准确分析。' })
 }
 
-// AI 路由 — 兼容匿名调用,但若带 JWT 则 req.userId 可用 (用于按年级出题)
-router.use((req, res, next) => {
-  const authHeader = req.headers.authorization || ''
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
-  if (token) {
-    try {
-      const payload = jwt.verify(token, process.env.JWT_SECRET || 'error-book-dev-secret-change-in-prod')
-      req.userId = payload.userId
-    } catch {
-      // token 无效忽略,作为匿名
-    }
-  }
-  next()
-})
+// AI 路由 — 需要登录 + 付费额度检查
+router.use(authMiddleware)
 
-router.post('/analyze', async (req, res) => {
+router.post('/analyze', checkDailyLimit({ action: 'ai_analyze' }), async (req, res) => {
   try {
     const { title, knowledgePoint, subject, textContent, childId } = req.body
 
@@ -230,7 +221,7 @@ ${gradePrompt}
 })
 
 // ─── 生成同类练习题 ────────────────────────────────────────────────────────────
-router.post('/similar', async (req, res) => {
+router.post('/similar', checkDailyLimit({ action: 'ai_similar' }), async (req, res) => {
   try {
     const { title, knowledgePoint, subject, difficulty = '中等', childId } = req.body
 
@@ -244,32 +235,107 @@ router.post('/similar', async (req, res) => {
     }
     const gradePrompt = buildGradePrompt(childGrade)
 
-    const prompt = `请生成${SIMILAR_COUNT}道关于"${knowledgePoint}"知识点的${subject}变式练习题。
+    const prompt = `请严格生成【恰好 ${SIMILAR_COUNT} 道】（不多不少，缺一不可）关于"${knowledgePoint}"知识点的${subject}变式练习题。
 
 ${gradePrompt}
 
-要求：
-- 严格按上述学段难度和知识点范围
-- 题目形式多变（选择题、填空题、解答题、应用题皆可）
-- 每道题附带参考答案
-- 配套答案简洁准确
+硬性要求：
+- 题目数量必须 = ${SIMILAR_COUNT},少 1 道即视为输出失败
+- 题型多样（选择题/填空题/解答题/应用题均可）
+- 每道题必须附带参考答案
+- 答案简洁准确,与题目一一对应
 
-请按以下JSON格式返回（不要有其他文字）：
-{
-  "questions": [
-    {
-      "id": "sq1",
-      "content": "题目内容",
-      "answer": "参考答案"
-    }
-  ]
-}`
+请按以下 JSON 格式返回（不要有其他文字,不要 markdown 代码块,纯 JSON 字符串即可）:
+{"questions":[{"id":"sq1","content":"题目内容","answer":"参考答案"}, ... 共 ${SIMILAR_COUNT} 项]}`
 
     const result = await callAI(prompt, '你是一位命题专家，擅长根据学段水平生成高质量的同类练习题。')
 
-    const parsed = extractJSON(result)
-    const questions = parsed?.questions || []
-    const formatted = questions.map((q, i) => ({
+    let parsed = extractJSON(result)
+    let questions = parsed?.questions || []
+    const target = SIMILAR_COUNT
+
+    // 兜底：若题目数不足,让 AI 继续补齐
+    if (questions.length < target) {
+      const need = target - questions.length
+      const continuePrompt = `上轮只生成了 ${questions.length} 道,还差 ${need} 道。请继续生成剩余 ${need} 道（题型/难度与之前一致,不要重复已有题）。
+严格返回 JSON(纯字符串,不要 markdown 代码块):
+{"questions":[{"id":"sq${questions.length + 1}","content":"题目内容","answer":"参考答案"}, ... 共 ${need} 项]}`
+      try {
+        const cont = await callAI(continuePrompt, '继续生成剩余题目。')
+        const contParsed = extractJSON(cont)
+        if (contParsed?.questions?.length) {
+          questions = questions.concat(contParsed.questions)
+        }
+      } catch (e) {
+        console.warn('[ai.similar] ensureCount 续生成失败:', e.message)
+      }
+    }
+
+    const formatted = questions.slice(0, target).map((q, i) => ({
+      id: q.id || `sq${i + 1}`,
+      content: q.content || '',
+      answer: q.answer || '',
+    }))
+    res.json({ questions: formatted })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ─── 随机同步练习 ──────────────────────────────────────────────────────────────
+router.post('/random', checkDailyLimit({ action: 'ai_similar' }), async (req, res) => {
+  try {
+    const { subject, grade } = req.body
+
+    // 若传了 childId 且当前有用户登录,反查 child 拿到 grade 注入 prompt
+    let childGrade = null
+    if (req.body.childId && req.userId) {
+      const child = await findChildById(req.body.childId)
+      if (child && childBelongsTo(child, req.userId)) {
+        childGrade = child.grade
+      }
+    }
+    const resolvedGrade = grade || childGrade
+    const gradePrompt = buildGradePrompt(resolvedGrade)
+
+    const prompt = `请严格生成【恰好 ${SIMILAR_COUNT} 道】（不多不少，缺一不可）关于"${subject}"科目的随机同步练习题。
+
+${gradePrompt}
+
+硬性要求：
+- 题目数量必须 = ${SIMILAR_COUNT},少 1 道即视为输出失败
+- 题目覆盖该学段常见考点,由易到难
+- 题型多样（选择题/填空题/解答题）
+- 每道题必须附带参考答案
+- 题目内容简洁明确,适合学生练习
+
+请按以下 JSON 格式返回（不要有其他文字,不要 markdown 代码块,纯 JSON 字符串即可）:
+{"questions":[{"id":"sq1","content":"题目内容","answer":"参考答案"}, ... 共 ${SIMILAR_COUNT} 项]}`
+
+    const result = await callAI(prompt, '你是一位命题专家，擅长根据学段水平生成高质量的同类练习题。')
+
+    let parsed = extractJSON(result)
+    let questions = parsed?.questions || []
+    const target = SIMILAR_COUNT
+
+    // 兜底：若题目数不足,让 AI 继续补齐
+    if (questions.length < target) {
+      const need = target - questions.length
+      const continuePrompt = `上轮只生成了 ${questions.length} 道,还差 ${need} 道。请继续生成剩余 ${need} 道（题型/难度与之前一致,不要重复已有题）。
+严格返回 JSON(纯字符串,不要 markdown 代码块):
+{"questions":[{"id":"sq${questions.length + 1}","content":"题目内容","answer":"参考答案"}, ... 共 ${need} 项]}`
+      try {
+        const cont = await callAI(continuePrompt, '继续生成剩余题目。')
+        const contParsed = extractJSON(cont)
+        if (contParsed?.questions?.length) {
+          questions = questions.concat(contParsed.questions)
+        }
+      } catch (e) {
+        console.warn('[ai.random] ensureCount 续生成失败:', e.message)
+      }
+    }
+
+    const formatted = questions.slice(0, target).map((q, i) => ({
       id: q.id || `sq${i + 1}`,
       content: q.content || '',
       answer: q.answer || '',

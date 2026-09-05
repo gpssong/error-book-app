@@ -15,6 +15,7 @@ import { User, createMemoryUser } from '../schemas/user.js'
 import { isMemoryDB } from '../schemas/db.js'
 import memoryStore from '../schemas/memory.js'
 import { signToken, authMiddleware } from '../middleware/auth.js'
+import { ADMIN_USERNAME } from '../middleware/auth.js'
 
 const router = Router()
 
@@ -94,7 +95,8 @@ router.post('/login', async (req, res) => {
     }
 
     const userId = isMemoryDB() ? user.id : user._id.toString()
-    const token = signToken({ userId, username: user.username })
+    const isAdmin = user.username === ADMIN_USERNAME
+    const token = signToken({ userId, username: user.username, isAdmin })
     res.json({
       token,
       user: {
@@ -102,6 +104,7 @@ router.post('/login', async (req, res) => {
         username: user.username,
         email: user.email,
         displayName: user.displayName || user.username,
+        isAdmin,
       },
     })
   } catch (err) {
@@ -116,20 +119,24 @@ router.get('/me', authMiddleware, async (req, res) => {
     if (isMemoryDB()) {
       const user = memoryStore.users.get(req.userId)
       if (!user) return res.status(404).json({ error: '用户不存在' })
+      const isAdmin = user.username === ADMIN_USERNAME
       return res.json({
         id: user.id,
         username: user.username,
         email: user.email,
         displayName: user.displayName || user.username,
+        isAdmin,
       })
     }
     const user = await User.findById(req.userId).select('-passwordHash')
     if (!user) return res.status(404).json({ error: '用户不存在' })
+    const isAdmin = user.username === ADMIN_USERNAME
     res.json({
       id: user._id.toString(),
       username: user.username,
       email: user.email,
       displayName: user.displayName || user.username,
+      isAdmin,
     })
   } catch (err) {
     res.status(500).json({ error: err.message })

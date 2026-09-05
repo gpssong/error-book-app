@@ -10,7 +10,7 @@
  * 所有数据变更都会触发对应组件重新渲染
  */
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useState } from 'react'
-import api, { Child, ErrorItem } from './api'
+import api, { Child, ErrorItem, SimilarQuestion, Subject } from './api'
 import { auth, LOGIN_SUCCESS_EVENT } from './auth'
 
 // ─── 状态类型 ─────────────────────────────────────────────────────────────────
@@ -102,6 +102,11 @@ interface AppContextType extends AppState {
   // v19: 跨页传递打印勾选(ErrorList 多选 → PrintPreview)
   pendingPrintIds: string[]
   setPendingPrintIds: (ids: string[]) => void
+  // v30: AI练习页生成题目 → PrintPreview
+  pendingPracticeQuestions: SimilarQuestion[]
+  setPendingPracticeQuestions: (questions: SimilarQuestion[]) => void
+  pendingPracticeSubject: Subject | null
+  setPendingPracticeSubject: (subject: Subject | null) => void
 }
 
 const AppContext = createContext<AppContextType | null>(null)
@@ -111,6 +116,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState)
   // v19: ErrorList 多选 → PrintPreview 跨页传递
   const [pendingPrintIds, setPendingPrintIds] = useState<string[]>([])
+  const [pendingPracticeQuestions, setPendingPracticeQuestions] = useState<SimilarQuestion[]>([])
+  const [pendingPracticeSubject, setPendingPracticeSubject] = useState<Subject | null>(null)
 
   // 加载孩子列表（带重试，适配 WebView Mixed Content 环境）
   const refreshChildren = useCallback(async () => {
@@ -229,6 +236,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     deleteError,
     pendingPrintIds,
     setPendingPrintIds,
+    pendingPracticeQuestions,
+    setPendingPracticeQuestions,
+    pendingPracticeSubject,
+    setPendingPracticeSubject,
   }
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

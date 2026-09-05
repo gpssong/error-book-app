@@ -25,6 +25,15 @@ function getApiBase(): string {
 const BASE_URL = getApiBase()
 console.log(`[API] BASE_URL=${BASE_URL}`)
 
+// ─── 全局配置缓存（来自 /api/config，替代 localStorage eb_keys）────────────────
+let _configCache: { keys: Array<{ category: string; provider: string; current: boolean; enabled: boolean; appId?: string; secretCode?: string }> } | null = null
+// 启动时预取，保证 OCR 请求发出前数据就绪
+fetch(`${BASE_URL}/api/config`)
+  .then(r => r.json())
+  .then((d: any) => { _configCache = d })
+  .catch(() => {})
+export function getConfigKeys() { return _configCache?.keys ?? [] }
+
 export interface Child {
   id: string
   name: string
@@ -77,6 +86,37 @@ export interface AIAnalysisResult {
   stepByStepGuide: string
 }
 
+// ─── 订阅类型 ─────────────────────────────────────────────────────────────────
+export interface SubscriptionLimits {
+  ocr:          { limit: number; used: number; remaining: number }
+  ai_analyze:   { limit: number; used: number; remaining: number }
+  ai_similar:   { limit: number; used: number; remaining: number }
+}
+
+export interface SubscriptionInfo {
+  plan: 'free' | 'pro' | 'family'
+  expiresAt: string | null
+  childrenCount: number
+  limits: SubscriptionLimits
+  isPaid: boolean
+}
+
+export interface PaywallError {
+  error: string
+  action: 'ocr' | 'ai_analyze' | 'ai_similar'
+  limit: number
+  used: number
+  remaining: number
+  message: string
+  plan: 'free' | 'pro' | 'family'
+}
+
+// ─── 402 事件 ─────────────────────────────────────────────────────────────────
+export const PAYWALL_EVENT = 'error-book:paywall'
+export function emitPaywall(data: PaywallError) {
+  window.dispatchEvent(new CustomEvent(PAYWALL_EVENT, { detail: data }))
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -93,6 +133,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const err = await res.json().catch(() => ({ error: '未登录' }))
     emitAuthRequired()
     throw new Error(err.error || '请先登录')
+  }
+
+  // 402 → 付费墙触发
+  if (res.status === 402) {
+    const data = await res.json().catch(() => ({})) as PaywallError
+    emitPaywall(data)
+    throw new Error(data.message || '额度已用完')
   }
 
   if (!res.ok) {
@@ -133,6 +180,8 @@ const api = {
     request<AIAnalysisResult>('/ai/analyze', { method: 'POST', body: JSON.stringify(data) }),
   generateSimilar: (data: { title: string; knowledgePoint: string; subject: string; difficulty?: string; childId?: string }) =>
     request<{ questions: SimilarQuestion[] }>('/ai/similar', { method: 'POST', body: JSON.stringify(data) }),
+  generateRandom: (data: { subject: string; grade?: string; childId?: string }) =>
+    request<{ questions: SimilarQuestion[] }>('/ai/random', { method: 'POST', body: JSON.stringify(data) }),
 
   // ─── 图片上传 ───────────────────────────────────────────────────────────────
   uploadBase64: (data: { data: string; filename?: string }) =>
@@ -140,22 +189,30 @@ const api = {
 
   // ─── 题目 OCR 识别 ───────────────────────────────────────────────────────────
   recognizeQuestion: (data: { imageBase64: string; subject?: string }) => {
-    // 若 localStorage 里有当前 OCR 用的 TextIn key,自动附带给后端
+    // 从后端缓存读取当前启用的 TextIn key（已预取，无竞态）
     const extraHeaders: Record<string, string> = {}
     try {
-      const raw = localStorage.getItem('eb_keys')
-      const list = raw ? JSON.parse(raw) as Array<any> : []
-      const textin = list.find((k) => k.category === 'ocr' && k.provider === 'textin' && k.current && k.enabled)
+      const textin = getConfigKeys().find((k) => k.category === 'ocr' && k.provider === 'textin' && k.current && k.enabled)
       if (textin && textin.appId && textin.secretCode) {
         extraHeaders['X-TextIn-App-Id'] = textin.appId
         extraHeaders['X-TextIn-Secret-Code'] = textin.secretCode
       }
-    } catch { /* localStorage 不可用时忽略 */ }
+    } catch { /* 忽略 */ }
     return request<{ title: string; knowledgePoint: string; textContent: string }>('/ocr', {
       method: 'POST',
       headers: extraHeaders,
       body: JSON.stringify(data),
     })
+  },
+
+  // ─── 订阅管理 ────────────────────────────────────────────────────────────────
+  subscription: {
+    getMe: () => request<SubscriptionInfo>('/subscription/me'),
+    upgrade: (data: { plan: 'pro' | 'family'; payMethod: string; screenshotUrl?: string }) =>
+      request<{ success: boolean; plan: string; message: string }>('/subscription/upgrade', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
   },
 
   // ─── 认证 ─────────────────────────────────────────────────────────────────────
@@ -169,7 +226,7 @@ const api = {
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(body.error || '注册失败')
-      return body as { token: string; user: { id: string; username: string; email: string; displayName: string } }
+      return body as { token: string; user: { id: string; username: string; email: string; displayName: string; isAdmin?: boolean } }
     },
     async login(data: { account: string; password: string }) {
       const res = await fetch(`${BASE_URL}/api/auth/login`, {
@@ -179,7 +236,7 @@ const api = {
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(body.error || '登录失败')
-      return body as { token: string; user: { id: string; username: string; email: string; displayName: string } }
+      return body as { token: string; user: { id: string; username: string; email: string; displayName: string; isAdmin?: boolean } }
     },
     async me() {
       const token = auth.getToken()
@@ -187,7 +244,7 @@ const api = {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error('未登录')
-      return res.json() as Promise<{ id: string; username: string; email: string; displayName: string }>
+      return res.json() as Promise<{ id: string; username: string; email: string; displayName: string; isAdmin?: boolean }>
     },
     async updateMe(data: { displayName?: string; oldPassword?: string; newPassword?: string }) {
       const res = await fetch(`${BASE_URL}/api/auth/me`, {

@@ -1,20 +1,20 @@
 /**
  * ProfileScreen - 我的页面
- * 显示账号信息，支持：
- *  - 编辑显示名
- *  - 修改密码
- *  - 账号设置（关联 config.html 多账号管理）
- *  - 套餐购买（占位，引导到 config.html 或后续接入支付）
+ * 显示账号信息、订阅状态，支持：
+ *  - 编辑显示名 / 修改密码
+ *  - 孩子管理入口
+ *  - 会员升级（UpgradeModal）
  *  - 退出登录
  */
 import React, { useState, useEffect, useCallback } from 'react'
 import { useApp } from '@/stores/AppContext'
 import { Icon } from '@/components/Icons'
 import { auth, emitAuthRequired } from '@/stores/auth'
-import api from '@/stores/api'
+import api, { type SubscriptionInfo } from '@/stores/api'
+import UpgradeModal from '@/components/UpgradeModal'
 import type { AuthUser } from '@/stores/auth'
 
-type ModalType = 'editName' | 'changePassword' | 'upgrade' | null
+type ModalType = 'editName' | 'changePassword' | null
 
 const BASE_URL = import.meta.env.VITE_API_URL || (() => {
   if (window.location.hostname === 'error.93gushi.com') return 'http://error.93gushi.com:4040'
@@ -28,23 +28,34 @@ interface Props {
 }
 
 export default function ProfileScreen({ onNavigate }: Props) {
-  const { children, activeChildId } = useApp()
+  const { children } = useApp()
   const currentUser = auth.getUser()
   const [user, setUser] = useState<AuthUser | null>(currentUser)
   const [loading, setLoading] = useState(false)
+  const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null)
+  const [showUpgrade, setShowUpgrade] = useState(false)
 
   const fetchUser = useCallback(async () => {
     try {
       const info = await api.auth.me()
       setUser(info)
       const current = auth.getUser()
-      if (current && current.displayName !== info.displayName) {
-        auth.setSession(auth.getToken() || '', { ...current, displayName: info.displayName })
+      if (current) {
+        const merged = { ...current, displayName: info.displayName, isAdmin: info.isAdmin }
+        auth.setSession(auth.getToken() || '', merged)
       }
     } catch { /* 静默失败，使用 localStorage 缓存 */ }
   }, [])
 
+  const fetchSubscription = useCallback(async () => {
+    try {
+      const sub = await api.subscription.getMe()
+      setSubscription(sub)
+    } catch { /* 静默失败 */ }
+  }, [])
+
   useEffect(() => { fetchUser() }, [fetchUser])
+  useEffect(() => { fetchSubscription() }, [fetchSubscription])
 
   // ─── 编辑显示名 ─────────────────────────────────────────────────────────────
   const [showNameModal, setShowNameModal] = useState<ModalType>(null)
@@ -66,7 +77,6 @@ export default function ProfileScreen({ onNavigate }: Props) {
   }
 
   // ─── 修改密码 ──────────────────────────────────────────────────────────────
-  const [showPwdModal, setShowPwdModal] = useState<ModalType>(null)
   const [oldPwd, setOldPwd] = useState('')
   const [newPwd, setNewPwd] = useState('')
   const [newPwd2, setNewPwd2] = useState('')
@@ -77,7 +87,6 @@ export default function ProfileScreen({ onNavigate }: Props) {
     setLoading(true)
     try {
       await api.auth.updateMe({ oldPassword: oldPwd, newPassword: newPwd })
-      setShowPwdModal(null)
       setOldPwd('')
       setNewPwd('')
       setNewPwd2('')
@@ -104,15 +113,31 @@ export default function ProfileScreen({ onNavigate }: Props) {
     window.open(url, '_blank')
   }
 
-  // ─── 套餐购买（占位，打开 config.html 的购买页） ────────────────────────────
-  const openUpgrade = () => {
-    const url = `${BASE_URL}/config.html#subscribe`
-    window.open(url, '_blank')
-  }
+  // ─── 套餐购买（打开 UpgradeModal） ───────────────────────────────────────
+  const openUpgrade = () => setShowUpgrade(true)
 
   const displayName = user?.displayName || user?.username || '家长'
   const email = user?.email || ''
   const avatar = displayName[0]?.toUpperCase() || '👤'
+
+  // 订阅徽章
+  const planBadge = () => {
+    if (!subscription) return null
+    const { plan, limits } = subscription
+    if (plan === 'pro') {
+      return <span className="text-[10px] font-black px-2 py-0.5 rounded-full text-white" style={{ background: 'linear-gradient(135deg, #2563EB, #7C3AED)' }}>PRO ✓</span>
+    }
+    if (plan === 'family') {
+      return <span className="text-[10px] font-black px-2 py-0.5 rounded-full text-white" style={{ background: 'linear-gradient(135deg, #DC2626, #F59E0B)' }}>FAMILY ✓</span>
+    }
+    return (
+      <div className="flex items-center gap-1 mt-1.5">
+        <span className="text-[10px] text-slate-400">免费版</span>
+        <span className="text-[10px] text-slate-300">·</span>
+        <span className="text-[10px] text-slate-400">OCR {limits.ocr.remaining}/{limits.ocr.limit}</span>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col h-full bg-[#F8FAFC]" style={{ fontFamily: "'Nunito', sans-serif" }}>
@@ -138,7 +163,7 @@ export default function ProfileScreen({ onNavigate }: Props) {
             <div className="text-xs text-slate-400 mt-0.5 truncate">{email || '未绑定邮箱'}</div>
             <div className="flex items-center gap-1 mt-1.5">
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white" style={{ background: '#10B981' }}>已登录</span>
-              <span className="text-[10px] text-slate-400 font-bold">{children.length} 个孩子 · {children.reduce((s, c) => s + c.errorCount, 0)} 道错题</span>
+              {planBadge()}
             </div>
           </div>
         </div>
@@ -173,17 +198,21 @@ export default function ProfileScreen({ onNavigate }: Props) {
           <MenuButton
             icon={<><Icon.CreditCard /><Icon.ChevronRight /></>}
             label="会员套餐"
-            desc="解锁更多 AI 功能"
+            desc={subscription?.plan === 'free' ? '解锁更多 AI 功能' : subscription?.plan === 'pro' ? '升级 Family 版管理全家' : 'Family 版已开通'}
             onClick={() => openUpgrade()}
           />
-          <Divider />
-          {/* 账号管理 */}
-          <MenuButton
-            icon={<><span className="text-base">⚙️</span><Icon.ChevronRight /></>}
-            label="账号管理"
-            desc="多账号切换、OCR配置"
-            onClick={() => openConfig()}
-          />
+          {user?.isAdmin && (
+            <>
+              <Divider />
+              {/* 账号管理（仅管理员） */}
+              <MenuButton
+                icon={<><span className="text-base">⚙️</span><Icon.ChevronRight /></>}
+                label="账号管理"
+                desc="多账号切换、OCR配置"
+                onClick={() => openConfig()}
+              />
+            </>
+          )}
         </div>
 
         {/* 退出登录 */}
@@ -194,8 +223,13 @@ export default function ProfileScreen({ onNavigate }: Props) {
           退出登录
         </button>
 
-        <p className="text-center text-[11px] text-slate-300 pb-4">错题本 v1.0 · Sapiens AI</p>
+        <p className="text-center text-[11px] text-slate-300 pb-4">错题本 v2.0 · Sapiens AI</p>
       </div>
+
+      {/* 付费升级弹窗 */}
+      {showUpgrade && (
+        <UpgradeModal onClose={() => setShowUpgrade(false)} />
+      )}
 
       {/* ─── 编辑显示名弹窗 ──────────────────────────────────────────────────── */}
       {showNameModal === 'editName' && (

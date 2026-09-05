@@ -12,6 +12,7 @@ export interface AuthUser {
   username: string
   email: string
   displayName: string
+  isAdmin?: boolean
 }
 
 export const auth = {

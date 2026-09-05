@@ -12,7 +12,9 @@
   "type": "commonjs",
   "dependencies": {
     "@capacitor/android": "^8.5.1",
+    "@capacitor/app": "^6.0.3",
     "@capacitor/cli": "^8.5.1",
-    "@capacitor/core": "^8.5.1"
+    "@capacitor/core": "^8.5.1",
+    "@dimer47/capacitor-plugin-printer": "^2.0.4"
   }
 }
