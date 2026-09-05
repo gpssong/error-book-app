@@ -160,3 +160,6 @@
 - APK: `error-book-v27-paywall.apk` (8.4MB)
 
 ---
+
+## v32 (2026-09-05)
+- CameraScreen 提示文字可见度：从 `text-white/70` 改为 `text-white/95`，提升深色背景上的对比度
