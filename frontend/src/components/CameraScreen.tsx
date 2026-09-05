@@ -256,14 +256,14 @@ export default function CameraScreen({ onNavigate }: Props) {
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="text-center">
                   <div className="text-5xl mb-3">📷</div>
-                  <p className="text-white/70 text-sm font-bold">点击下方按钮拍照或选择图片</p>
+                  <p className="text-white/95 text-sm font-bold">点击下方按钮拍照或选择图片</p>
                 </div>
               </div>
             </div>
             <div className="absolute bottom-4 left-0 right-0 flex justify-center">
               <div className="bg-black/50 rounded-full px-4 py-1.5 flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-[#2563EB] animate-pulse" />
-                <span className="text-white text-xs font-bold">支持拍照导入 / 相册选择</span>
+                <span className="text-white/90 text-xs font-bold">支持拍照导入 / 相册选择</span>
               </div>
             </div>
           </div>
