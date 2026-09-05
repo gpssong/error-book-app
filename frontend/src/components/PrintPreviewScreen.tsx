@@ -5,6 +5,7 @@
 import React, { useState } from 'react'
 import { useApp } from '@/stores/AppContext'
 import { Icon, SubjectTag } from '@/components/Icons'
+import LatexPreview from '@/components/LatexPreview'
 import type { Subject } from '@/stores/api'
 
 type Screen = 'dashboard' | 'childManage' | 'errorList' | 'errorDetail' | 'printPreview' | 'camera'
@@ -116,8 +117,21 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
                     </div>
                     <span className="text-[9px] text-slate-400 font-600">{err.knowledgePoint}</span>
                   </div>
-                  <div className="bg-slate-50">
-                    <img src={err.imageUrl} alt={err.title} className={`w-full object-cover ${printLayout === '2列' ? 'h-20' : 'h-28'}`} />
+                  <div
+                    className="bg-slate-50 px-2 py-2 overflow-hidden print:overflow-visible print:max-h-none"
+                    style={{
+                      minHeight: printLayout === '2列' ? 96 : 120,
+                      maxHeight: printLayout === '2列' ? 96 : 240,
+                    }}
+                  >
+                    {err.textContent ? (
+                      <LatexPreview
+                        text={err.textContent}
+                        className="text-[10px] text-slate-700 leading-relaxed print:text-[11px]"
+                      />
+                    ) : (
+                      <p className="text-[9px] text-slate-400 italic">（未识别文字内容）</p>
+                    )}
                   </div>
                   <div className="px-2 py-2">
                     <p className="text-[10px] font-bold text-slate-700 truncate">{err.title}</p>

@@ -1,5 +1,20 @@
 # Changelog
 
+## v15 (2026-09-05) - 打印显示识别文字 + KaTeX 渲染
+
+### 修改
+- **`PrintPreviewScreen.tsx`**: 打印预览的错题卡片从"显示原图"改成"显示识别后的文字（含 KaTeX 公式）"
+  - 使用 `<LatexPreview>` 渲染 `textContent`
+  - 屏幕预览限制最大高度（2列 96px / 1列 240px）+ `overflow:hidden`
+  - 打印模式 `print:overflow-visible print:max-h-none` 解除限制，让学生能看到完整题目
+  - 打印字号放大到 `text-[11px]`（屏幕 `text-[10px]`）
+
+### 部署
+- 重新构建前端 hash `index-Bx_sjMp2.js`
+- APK: `error-book-v15-print-text.apk` (5.3MB)
+
+---
+
 ## v14 (2026-09-05) - 录入明细 LaTeX 渲染 + OCR 视觉主路径
 
 ### 新增
