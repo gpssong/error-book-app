@@ -82,8 +82,9 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
     }
   }
 
-  // 获取每道错题的参考答案：优先用 first similarQuestion.answer
+  // 获取每道错题的参考答案：优先用 AI 讲解的答案，其次用 first similarQuestion.answer
   const getAnswer = (err: typeof printErrors[number]) => {
+    if (err.aiAnalysis?.answer) return err.aiAnalysis.answer
     if (err.similarQuestions && err.similarQuestions.length > 0) {
       return err.similarQuestions[0].answer
     }

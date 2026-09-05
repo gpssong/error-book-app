@@ -196,7 +196,8 @@ ${gradePrompt}
 {
   "mistakeReason": "错误原因分析",
   "knowledgeExplained": "对应知识点讲解（使用该学段能理解的语言）",
-  "stepByStepGuide": "分步解题教程"
+  "stepByStepGuide": "分步解题教程",
+  "answer": "最终答案（简洁准确，如选择题选字母或数值结果）"
 }`
 
     const result = await callAI(prompt, '你是一位经验丰富的数学老师，擅长分析学生错误并给出清晰的讲解。')
@@ -207,6 +208,7 @@ ${gradePrompt}
         mistakeReason: parsed.mistakeReason || '',
         knowledgeExplained: parsed.knowledgeExplained || '',
         stepByStepGuide: parsed.stepByStepGuide || '',
+        answer: parsed.answer || '',
       })
     } else {
       res.json({

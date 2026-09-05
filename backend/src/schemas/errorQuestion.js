@@ -40,6 +40,7 @@ export const errorQuestionSchema = new mongoose.Schema(
       mistakeReason: { type: String, default: '' },
       knowledgeExplained: { type: String, default: '' },
       stepByStepGuide: { type: String, default: '' },
+      answer: { type: String, default: '' },
       analyzedAt: { type: Date },
     },
     similarQuestions: [{
@@ -80,6 +81,7 @@ export function createMemoryError(payload, childId) {
       mistakeReason: '',
       knowledgeExplained: '',
       stepByStepGuide: '',
+      answer: '',
       analyzedAt: null,
     },
     similarQuestions: [],

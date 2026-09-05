@@ -70,6 +70,7 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
         mistakeReason: result.mistakeReason,
         knowledgeExplained: result.knowledgeExplained,
         stepByStepGuide: result.stepByStepGuide,
+        answer: result.answer || '',
       })
       await updateError(err.id, { aiAnalyzed: true, aiAnalysis: { ...result, analyzedAt: new Date().toISOString() } })
     } catch (e) {
@@ -94,6 +95,7 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
         mistakeReason: aiResult?.mistakeReason || '',
         knowledgeExplained: aiResult?.knowledgeExplained || '',
         stepByStepGuide: aiResult?.stepByStepGuide || '',
+        answer: aiResult?.answer || '',
         similarQuestions: res.questions,
       })
       await updateError(err.id, { similarQuestions: res.questions })

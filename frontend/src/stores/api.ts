@@ -73,6 +73,7 @@ export interface ErrorItem {
     mistakeReason: string
     knowledgeExplained: string
     stepByStepGuide: string
+    answer?: string
     analyzedAt: string | null
   }
   similarQuestions?: SimilarQuestion[]
@@ -84,6 +85,7 @@ export interface AIAnalysisResult {
   mistakeReason: string
   knowledgeExplained: string
   stepByStepGuide: string
+  answer?: string
 }
 
 // ─── 订阅类型 ─────────────────────────────────────────────────────────────────
@@ -172,7 +174,7 @@ const api = {
   }),
   clearHandwriting: (id: string) =>
     request<ErrorItem>(`/errors/${id}/handwriting`, { method: 'PATCH', body: JSON.stringify({ clear: true }) }),
-  saveAiAnalysis: (id: string, data: { mistakeReason: string; knowledgeExplained: string; stepByStepGuide: string; similarQuestions?: SimilarQuestion[] }) =>
+  saveAiAnalysis: (id: string, data: { mistakeReason: string; knowledgeExplained: string; stepByStepGuide: string; answer?: string; similarQuestions?: SimilarQuestion[] }) =>
     request<ErrorItem>(`/errors/${id}/ai-analysis`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   // ─── AI 服务 ────────────────────────────────────────────────────────────────
