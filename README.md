@@ -2,7 +2,7 @@
 
 多子女错题本应用，支持 **拍照识题 + AI讲解 + 手写批注 + 错题管理 + 多用户账号隔离**。
 
-**最新版本**: `error-book-ui-fix.apk`
+**最新版本**: `error-book-print-fix.apk`
 **线上地址**: http://error.93gushi.com:4040
 
 ## 技术栈
