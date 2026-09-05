@@ -39,6 +39,7 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
   const [currentHandwritingSvg, setCurrentHandwritingSvg] = useState<string>(err?.handwritingSvg ?? '')
   const [hasHandwriting, setHasHandwriting] = useState<boolean>(!!err?.handwritingSvg)
   const [showAnswer, setShowAnswer] = useState<Record<string, boolean>>({})
+  const [deleting, setDeleting] = useState(false)
 
   // 当错误数据从后端刷新时同步本地状态
   useEffect(() => {
@@ -117,7 +118,6 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
   }
 
   // ─── 删除错题 ──────────────────────────────────────────────────────────────
-  const [deleting, setDeleting] = useState(false)
   const handleDelete = async () => {
     if (deleting) return
     if (!confirm(`确定删除错题"${err.title}"？\n该操作不可撤销。`)) return

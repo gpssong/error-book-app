@@ -1,5 +1,17 @@
 # Changelog
 
+## v17 (2026-09-05) - 删除错题 React #300 修复
+
+### 修复
+- **`ErrorDetailScreen.tsx`** `useState(false)` for `deleting` 之前定义在 `if (!err) return` 之后。当删除错题后 `await refreshErrors()` 触发重新渲染,`err` 变 `undefined`,组件走 early return 分支,**hook 数量从 12 变成 11**(少了 `useState deleting`),触发 React #300 "Rendered more hooks than during the previous render"。
+- 修复:把 `useState deleting` 上移到组件顶部,与其他 hooks 一起声明,保证 hook 顺序稳定。
+
+### 部署
+- 重新构建前端 hash `index-BqaEKU4y.js`
+- APK: `error-book-v17-delete-fix.apk` (5.3MB)
+
+---
+
 ## v16 (2026-09-05) - 同类练习打印
 
 ### 新增
