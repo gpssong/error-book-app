@@ -22,8 +22,8 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
   const [printLayout, setPrintLayout] = useState<'2列' | '1列'>('2列')
   // v19: 从 ErrorList 多选跳转时,读 pendingPrintIds 作初值
   const [selectedIds, setSelectedIds] = useState<string[]>(pendingPrintIds)
-  // v22: 含参考答案开关(默认开,保持 v21 之前行为)
-  const [showAnswer, setShowAnswer] = useState(true)
+  // v22: 含参考答案开关(默认关,打印场景用户主要是给学生做,不要答案)
+  const [showAnswer, setShowAnswer] = useState(false)
 
   const childErrors = errors.filter((e) => e.childId === activeChildId)
   const printErrors = selectedIds.length > 0
@@ -287,7 +287,7 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
           {[
             { label: '纸张大小', value: 'A4 (210 × 297mm)' },
             { label: '排版方式', value: printLayout === '2列' ? '两列排版' : '单列排版' },
-            { label: '包含参考答案', value: '是' },
+            { label: '包含参考答案', value: showAnswer ? '是' : '否' },
             { label: '包含知识点标注', value: '是' },
             { label: '包含同类练习', value: '是' },
           ].map((item) => (

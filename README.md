@@ -2,7 +2,7 @@
 
 多子女错题本应用，支持 **拍照识题 + AI讲解 + 手写批注 + 错题管理 + 多用户账号隔离**。
 
-**最新版本**: `error-book-v23-print-tight.apk` (5.3MB)
+**最新版本**: `error-book-v23.1-answer-off.apk` (5.3MB)
 **线上地址**: http://error.93gushi.com:4040
 
 ## 技术栈
@@ -221,6 +221,7 @@ client_max_body_size 20m;  # OCR base64 大图必须放大
 
 | 版本 | 日期 | 主要变化 |
 |---|---|---|
+| **v23.1** | 2026-09-05 | 打印默认关闭参考答案(showAnswer 默认 false,打印设置面板同步) |
 | **v23** | 2026-09-05 | 打印 A4 顶天立地:body flex 居中重置 + A4 容器强制 210mm×297mm + BottomNav 排除 |
 | **v22** | 2026-09-05 | 含参考答案开关变真 button:加 showAnswer state,div 装饰品改为可点击 toggle |
 | **v21** | 2026-09-05 | ErrorDetailScreen 详情页"打印此题"也走 setPendingPrintIds,只打这一题 |
