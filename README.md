@@ -2,7 +2,7 @@
 
 多子女错题本应用，支持 **拍照识题 + AI讲解 + 手写批注 + 错题管理 + 多用户账号隔离**。
 
-**最新版本**: `error-book-v21-detail-print.apk` (5.3MB)
+**最新版本**: `error-book-v22-toggle-fix.apk` (5.3MB)
 **线上地址**: http://error.93gushi.com:4040
 
 ## 技术栈
@@ -221,6 +221,7 @@ client_max_body_size 20m;  # OCR base64 大图必须放大
 
 | 版本 | 日期 | 主要变化 |
 |---|---|---|
+| **v22** | 2026-09-05 | 含参考答案开关变真 button:加 showAnswer state,div 装饰品改为可点击 toggle |
 | **v21** | 2026-09-05 | ErrorDetailScreen 详情页"打印此题"也走 setPendingPrintIds,只打这一题 |
 | **v20** | 2026-09-05 | v19 漏 import useState 修复:AppContext.tsx 补 useState 到 react import |
 | **v19** | 2026-09-05 | 打印选中传递:AppContext 加 pendingPrintIds 跨页传选中,打印页加 chip 勾选 UI 二次调整 |

@@ -22,6 +22,8 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
   const [printLayout, setPrintLayout] = useState<'2列' | '1列'>('2列')
   // v19: 从 ErrorList 多选跳转时,读 pendingPrintIds 作初值
   const [selectedIds, setSelectedIds] = useState<string[]>(pendingPrintIds)
+  // v22: 含参考答案开关(默认开,保持 v21 之前行为)
+  const [showAnswer, setShowAnswer] = useState(true)
 
   const childErrors = errors.filter((e) => e.childId === activeChildId)
   const printErrors = selectedIds.length > 0
@@ -86,9 +88,23 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
           ))}
           <div className="ml-auto flex items-center gap-1.5">
             <span className="text-[10px] text-slate-400 font-600">含参考答案</span>
-            <div className="w-8 h-4 rounded-full bg-blue-200 flex items-center" style={{ justifyContent: 'flex-end', padding: '2px' }}>
-              <div className="w-3 h-3 rounded-full bg-[#2563EB]" />
-            </div>
+            {/* v22: 改成真按钮 - 之前是装饰品 div 无法点击 */}
+            <button
+              type="button"
+              aria-pressed={showAnswer}
+              onClick={() => setShowAnswer((v) => !v)}
+              className="w-8 h-4 rounded-full flex items-center transition-colors"
+              style={{
+                background: showAnswer ? '#2563EB' : '#CBD5E1',
+                justifyContent: showAnswer ? 'flex-end' : 'flex-start',
+                padding: '2px',
+              }}
+            >
+              <div
+                className="w-3 h-3 rounded-full bg-white shadow"
+                style={{ transition: 'transform 0.15s' }}
+              />
+            </button>
           </div>
         </div>
       </div>
@@ -199,13 +215,13 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
                       <p className="text-[9px] text-slate-400 font-600">我的解答：</p>
                       <div className="h-8 border-b border-slate-200 mt-1" />
                     </div>
-                    {answer ? (
+                    {showAnswer ? (
                       <div className="mt-2 rounded-lg p-1.5" style={{ background: '#FFF7ED' }}>
                         <p className="text-[9px] text-orange-500 font-bold">参考答案：{answer}</p>
                       </div>
                     ) : (
-                      <div className="mt-2 rounded-lg p-1.5" style={{ background: '#FFF7ED' }}>
-                        <p className="text-[9px] text-orange-400 font-bold italic">暂无答案（请先 AI 生成）</p>
+                      <div className="mt-2 rounded-lg p-1.5 border border-dashed border-slate-200">
+                        <p className="text-[9px] text-slate-400 font-bold italic">（已隐藏参考答案，学生自测）</p>
                       </div>
                     )}
                   </div>
@@ -238,7 +254,7 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
                               <p className="text-[8px] text-blue-400 font-600">解答：</p>
                               <div className="h-5 border-b border-blue-50 mt-0.5" />
                             </div>
-                            {sq.answer ? (
+                            {showAnswer && sq.answer ? (
                               <div className="mt-1 rounded p-1" style={{ background: '#FFF7ED' }}>
                                 <p className="text-[8px] text-orange-500 font-bold">答案：{sq.answer}</p>
                               </div>

@@ -1,6 +1,21 @@
 # Changelog
 
-## v21 (2026-09-05) - ErrorDetail 详情页"打印此题"也走 selectedIds
+## v22 (2026-09-05) - "含参考答案"开关变真开关
+
+### 修复
+- **`PrintPreviewScreen` 含参考答案开关无法点击**:之前的"开关"是**纯装饰品 div**(`<div>` 套 `<div>`,没 `onClick` 也没 `state`),看起来像 toggle 但点不动 —— 用户反馈"想关参考答案关不掉"。
+- **v22 修复**:
+  1. 新增 `const [showAnswer, setShowAnswer] = useState(true)` state(默认开,保持 v21 之前行为)
+  2. 装饰 div 改成真 `<button type="button" aria-pressed={showAnswer} onClick={() => setShowAnswer(v => !v)}>`
+  3. 颜色根据 state 切换:`#2563EB` (开) ↔ `#CBD5E1` (关),圆点位置 `flex-end` ↔ `flex-start`
+  4. 错题卡"参考答案:X" 区域改用 `{showAnswer ? (...) : ('已隐藏参考答案')}` —— 关掉时显示提示占位而不是留空
+  5. 同类题"答案:X" 也加 `{showAnswer && sq.answer && (...)}` —— 关掉时连同类题答案都不显示
+
+### 部署
+- 重新构建前端 hash `index-6g6YU5Ld.js` ✅ HTTP 200
+- APK: `error-book-v22-toggle-fix.apk` (5.3MB)
+
+---
 
 ### 修复
 - **v19/v20 修复漏的入口**:`ErrorDetailScreen` 底部"打印此题"按钮 (`onErrorId('printPreview')`) 之前**没有**调 `setPendingPrintIds`,从详情页进打印页时 `pendingPrintIds = []` → 走默认全量显示 → 用户看到"明明打印 1 题却有 4 道题"。
