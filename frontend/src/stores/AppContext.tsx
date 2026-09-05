@@ -98,6 +98,9 @@ interface AppContextType extends AppState {
   createError: (data: Partial<ErrorItem>) => Promise<void>
   updateError: (id: string, data: Partial<ErrorItem>) => Promise<void>
   deleteError: (id: string) => Promise<void>
+  // v19: 跨页传递打印勾选(ErrorList 多选 → PrintPreview)
+  pendingPrintIds: string[]
+  setPendingPrintIds: (ids: string[]) => void
 }
 
 const AppContext = createContext<AppContextType | null>(null)
@@ -105,6 +108,8 @@ const AppContext = createContext<AppContextType | null>(null)
 // ─── Provider ─────────────────────────────────────────────────────────────────
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState)
+  // v19: ErrorList 多选 → PrintPreview 跨页传递
+  const [pendingPrintIds, setPendingPrintIds] = useState<string[]>([])
 
   // 加载孩子列表（带重试，适配 WebView Mixed Content 环境）
   const refreshChildren = useCallback(async () => {
@@ -208,6 +213,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     createError,
     updateError,
     deleteError,
+    pendingPrintIds,
+    setPendingPrintIds,
   }
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

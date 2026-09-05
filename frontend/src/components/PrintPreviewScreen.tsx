@@ -3,8 +3,9 @@
  * 支持 A4 排版预览、1列/2列切换、导出打印
  *
  * v16: 每道错题卡下方追加同类练习(similarQuestions),也用 LatexPreview 渲染
+ * v19: 读 AppContext.pendingPrintIds 作 selectedIds 初值;加勾选 UI 允许用户在打印页二次调整
  */
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useApp } from '@/stores/AppContext'
 import { Icon, SubjectTag } from '@/components/Icons'
 import LatexPreview from '@/components/LatexPreview'
@@ -17,14 +18,21 @@ interface Props {
 }
 
 export default function PrintPreviewScreen({ onNavigate }: Props) {
-  const { children, activeChildId, errors, activeChild } = useApp()
+  const { children, activeChildId, errors, activeChild, pendingPrintIds, setPendingPrintIds } = useApp()
   const [printLayout, setPrintLayout] = useState<'2列' | '1列'>('2列')
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  // v19: 从 ErrorList 多选跳转时,读 pendingPrintIds 作初值
+  const [selectedIds, setSelectedIds] = useState<string[]>(pendingPrintIds)
 
   const childErrors = errors.filter((e) => e.childId === activeChildId)
   const printErrors = selectedIds.length > 0
     ? childErrors.filter((e) => selectedIds.includes(e.id))
-    : childErrors.slice(0, 6)
+    : childErrors
+
+  // v19: 返回 ErrorList 时清空 pendingPrintIds,避免下次进来残留
+  useEffect(() => {
+    return () => { setPendingPrintIds([]) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
@@ -47,7 +55,7 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
       <div className="bg-white px-4 pt-12 pb-4 shadow-sm print:hidden">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
-            <button onClick={() => onNavigate('errorList')} className="text-slate-600"><Icon.Back /></button>
+            <button onClick={() => { setPendingPrintIds([]); onNavigate('errorList') }} className="text-slate-600"><Icon.Back /></button>
             <div>
               <h1 className="font-black text-slate-900 text-base">打印预览</h1>
               <p className="text-[10px] text-slate-400">A4版式 · {printErrors.length}道错题</p>
@@ -83,6 +91,55 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* v19: 题目选择区 - 用户可调整要打印的错题 */}
+      <div className="bg-white border-b border-slate-100 px-4 py-3 print:hidden">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-extrabold text-slate-700">📋 题目选择</span>
+            <span className="text-[10px] text-slate-400">已选 {printErrors.length} / {childErrors.length}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedIds(childErrors.map((e) => e.id))}
+              className="text-[10px] font-bold text-[#2563EB] px-2 py-1 rounded-lg"
+              style={{ background: '#EFF6FF' }}
+            >
+              全选
+            </button>
+            <button
+              onClick={() => setSelectedIds([])}
+              className="text-[10px] font-bold text-slate-500 px-2 py-1 rounded-lg"
+              style={{ background: '#F1F5F9' }}
+            >
+              清空
+            </button>
+          </div>
+        </div>
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          {childErrors.map((err, idx) => {
+            const checked = selectedIds.includes(err.id)
+            return (
+              <button
+                key={err.id}
+                onClick={() => toggleSelect(err.id)}
+                className="shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg transition-colors"
+                style={checked
+                  ? { background: '#2563EB', color: '#fff' }
+                  : { background: '#F1F5F9', color: '#64748B' }
+                }
+              >
+                <span className="opacity-70">{idx + 1}.</span>
+                <span className="max-w-[80px] truncate">{err.title || '未命名'}</span>
+                {checked && <span>✓</span>}
+              </button>
+            )
+          })}
+        </div>
+        {selectedIds.length === 0 && (
+          <p className="text-[10px] text-amber-500 font-bold mt-2">⚠️ 未选任何错题，点击上方题目添加</p>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 print:overflow-visible print:p-0">

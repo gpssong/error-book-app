@@ -15,7 +15,7 @@ interface Props {
 }
 
 export default function ErrorListScreen({ onNavigate }: Props) {
-  const { children, activeChildId, errors, activeChild, refreshErrors } = useApp()
+  const { children, activeChildId, errors, activeChild, refreshErrors, setPendingPrintIds } = useApp()
   const [filterSubject, setFilterSubject] = useState<Subject | '全部'>('全部')
   const [isMultiSelect, setIsMultiSelect] = useState(false)
   const [selectedErrors, setSelectedErrors] = useState<string[]>([])
@@ -67,7 +67,7 @@ export default function ErrorListScreen({ onNavigate }: Props) {
             </button>
             {isMultiSelect && selectedErrors.length > 0 && (
               <button
-                onClick={() => onNavigate('printPreview')}
+                onClick={() => { setPendingPrintIds(selectedErrors); onNavigate('printPreview') }}
                 className="text-xs font-bold px-3 py-1.5 rounded-xl text-white"
                 style={{ background: '#F97316' }}
               >
@@ -109,7 +109,7 @@ export default function ErrorListScreen({ onNavigate }: Props) {
           </div>
           {selectedErrors.length > 0 && (
             <div className="flex items-center gap-2">
-              <button onClick={() => onNavigate('printPreview')} className="flex items-center gap-1 text-xs font-bold text-[#F97316]">
+              <button onClick={() => { setPendingPrintIds(selectedErrors); onNavigate('printPreview') }} className="flex items-center gap-1 text-xs font-bold text-[#F97316]">
                 <Icon.Print /> 打印
               </button>
               <button

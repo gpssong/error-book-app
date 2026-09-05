@@ -1,6 +1,22 @@
 # Changelog
 
-## v18 (2026-09-05) - 删除错题 React #300 真正修复
+## v19 (2026-09-05) - 打印"选中 1 题却显示多题"修复
+
+### 修复
+- **`PrintPreviewScreen` 选中状态丢失 Bug**:`ErrorList` 多选模式勾选 N 道题 → 点"打印(N)" → 进入打印页 → 显示**全部孩子错题**(默认 slice(0,6))而非用户选中的 N 道。
+- **根因**:`PrintPreviewScreen` 的 `selectedIds` 是组件本地 state (永远空 `[]`),`ErrorListScreen` 跳转打印时 `onNavigate('printPreview')` **没有传任何 ID**;打印页走 `selectedIds.length > 0 ? ... : childErrors.slice(0, 6)` 默认分支。
+- **v19 修复**:
+  1. `AppContext` 新增 `pendingPrintIds: string[]` + `setPendingPrintIds` 跨页 state
+  2. `ErrorListScreen` 跳转打印前调 `setPendingPrintIds(selectedErrors)`,把选中的 IDs 传出去
+  3. `PrintPreviewScreen` 用 `useState<string[]>(pendingPrintIds)` 读取初值
+  4. 打印页头部新增"📋 题目选择"区:横排 chip 显示每道题,蓝色=已选,灰色=未选,可点击切换;带"全选/清空"快捷按钮;未选时显黄色警告
+  5. 返回 / 卸载时清空 `pendingPrintIds`,避免下次残留
+
+### 部署
+- 重新构建前端 hash `index-DGaNNESL.js` ✅ HTTP 200
+- APK: `error-book-v19-print-select.apk` (5.3MB)
+
+---
 
 ### 修复
 - **v17 修复未生效**:之前只把 `useState deleting` 上移,但 **`useCallback(handleAnalyze)` 和 `useCallback(handleGenerateSimilar)` 仍在 `if (!err) return` 之后**。
