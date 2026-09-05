@@ -140,7 +140,7 @@ function AppContent() {
   )
 
   // 根据当前屏幕决定渲染内容和是否显示底部导航
-  const showNav = !['errorDetail', 'camera', 'printPreview', 'aiPractice'].includes(screen)
+  const showNav = !['errorDetail', 'camera', 'printPreview'].includes(screen)
 
   return (
     <div className="flex flex-col" style={{ height: '100%' }}>

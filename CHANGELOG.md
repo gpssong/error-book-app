@@ -1,5 +1,19 @@
 # Changelog
 
+## v32 (2026-09-05) - AI练习页面底部导航显示修复
+
+### 修复
+- **AI同步练习页底部 4 个 tab 恢复正常**：`App.tsx` 的 `showNav` 排除列表误将 `aiPractice` 列入，导致进入该页面后底部导航消失。移除 `aiPractice`，只保留 `errorDetail`/`camera`/`printPreview` 三个无导航页。
+
+### 修改
+- `frontend/src/App.tsx`: 第 143 行 `showNav` 排除列表去掉 `'aiPractice'`
+
+### 部署
+- 前端: `index-OIDqBvOX.js` ✅ HTTP 200
+- Android: `apk/error-book-nav-fix.apk`
+
+---
+
 ## v31 (2026-09-05) - AI 讲解 LaTeX 公式渲染
 
 ### 修复
