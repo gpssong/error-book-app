@@ -1,5 +1,24 @@
 # Changelog
 
+## v35 (2026-09-05) - 选择题打印时选项与题目重叠修复
+
+### 修复
+- **选择题打印时选项与 title 重叠**：根因是错题卡外层 `overflow-hidden` 在打印时未覆盖，导致 KaTeX 公式被截断后溢出到下方 title 区域；同时题目文本容器的 `maxHeight: 96px` 在打印时仍然生效，限制了内容高度。修复：
+  - 错题卡外层、随机题外层、A4 容器加 `print:overflow-visible`
+  - textContent 容器加 `print:max-h-none` 移除打印时高度限制
+  - title 改为 `print-title-auto`（CSS 类，白空格正常换行，不截断）
+  - `@media print` 中为 `.katex` 设置 `line-height: 1.2` 和 `margin: 0`
+
+### 修改
+- `frontend/src/components/PrintPreviewScreen.tsx`: 错题卡/A4/随机题 div 加 `print:overflow-visible`，textContent 容器加 `print:max-h-none`，title 换 `print-title-auto`
+- `frontend/src/index.css`: `@media print` 块加 `.katex` line-height、`.print-text-content`、`.print-break-inside-avoid`、`.print-title-auto` 规则
+
+### 部署
+- 前端: `index-qDV9Lh0r.js` ✅ HTTP 200
+- Android: `apk/error-book-print-fix.apk`
+
+---
+
 ## v32 (2026-09-05) - AI练习页面底部导航显示修复
 
 ### 修复
