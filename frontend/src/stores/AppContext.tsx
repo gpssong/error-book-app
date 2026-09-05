@@ -11,6 +11,7 @@
  */
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useState } from 'react'
 import api, { Child, ErrorItem } from './api'
+import { auth, LOGIN_SUCCESS_EVENT } from './auth'
 
 // ─── 状态类型 ─────────────────────────────────────────────────────────────────
 interface AppState {
@@ -162,8 +163,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // 初始化加载
   useEffect(() => {
-    refreshChildren()
+    // v24: 仅在已有 token 时加载(避免登录页挂载时 401 重试浪费)
+    if (auth.isLoggedIn()) {
+      refreshChildren()
+    }
   }, [])
+
+  // v24: 监听登录事件 - 登录成功后立即加载数据
+  useEffect(() => {
+    const handler = () => {
+      console.log('[AppContext] login success, refreshing children')
+      refreshChildren()
+    }
+    window.addEventListener(LOGIN_SUCCESS_EVENT, handler)
+    return () => window.removeEventListener(LOGIN_SUCCESS_EVENT, handler)
+  }, [refreshChildren])
 
   // ─── 操作方法 ──────────────────────────────────────────────────────────────
   const addChild = async (data: Partial<Child>) => {

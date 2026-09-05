@@ -41,6 +41,14 @@ export const auth = {
  * 触发"需要登录"事件，App.tsx 监听后切到登录页
  */
 export const AUTH_EVENT = 'error-book:auth-required'
+/**
+ * v24: 登录成功事件 - AppContext 监听后重新加载数据
+ * (AUTH_EVENT 是"401/需登录",与"刚登录成功"语义相反,不能复用)
+ */
+export const LOGIN_SUCCESS_EVENT = 'error-book:login-success'
 export function emitAuthRequired() {
   window.dispatchEvent(new CustomEvent(AUTH_EVENT))
+}
+export function emitLoginSuccess() {
+  window.dispatchEvent(new CustomEvent(LOGIN_SUCCESS_EVENT))
 }

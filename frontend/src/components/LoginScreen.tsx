@@ -5,7 +5,7 @@
  */
 import React, { useState } from 'react'
 import api from '../stores/api'
-import { auth } from '../stores/auth'
+import { auth, emitLoginSuccess } from '../stores/auth'
 
 interface Props {
   onSuccess: () => void
@@ -29,6 +29,7 @@ export default function LoginScreen({ onSuccess, onGotoRegister }: Props) {
     try {
       const { token, user } = await api.auth.login({ account, password })
       auth.setSession(token, user)
+      emitLoginSuccess()
       onSuccess()
     } catch (err: any) {
       setError(err.message || '登录失败')

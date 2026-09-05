@@ -1,6 +1,28 @@
 # Changelog
 
-## v23.1 (2026-09-05) - 打印默认关闭参考答案
+## v24 (2026-09-05) - 登录后孩子/错题数据不显示修复
+
+### Bug
+**用户反馈**:"更新 app 以后再登录 gpssong 账号后小孩信息和错题信息没有显示"。
+
+### 根因
+- `AppProvider`(包裹 `AppContent`)在 **App 启动时立即挂载**,早于登录页出现。
+- AppContext 第 164 行初始化 `useEffect(() => { refreshChildren() }, [])` 在挂载时立刻发请求 → **此时 `auth.getToken()` 返回 null** → 后端 401 → `refreshChildren` 重试 3 次全部失败 → children 永远是空数组,activeChildId 永远是 `''`。
+- 用户从登录页完成登录后:`setLoggedIn(true)` 只触发 AppContent 内部渲染切换,但 AppProvider 不会重新挂载,所以 `refreshChildren` 不会再被调用 → children 一直空 → dashboard 显示"暂无孩子"。
+- 后续 `refreshErrors` 因 `state.activeChildId === ''` 短路 return,错题自然也加载不到。
+
+### 修复
+1. **`stores/auth.ts`**:新增 `LOGIN_SUCCESS_EVENT = 'error-book:login-success'` + `emitLoginSuccess()`,与 AUTH_EVENT(401)语义分开
+2. **`stores/AppContext.tsx`**:
+   - 初始化 `useEffect` 加 `if (auth.isLoggedIn())` 守卫 —— 首次启动无 token 时不浪费 401 重试
+   - 新增第二个 `useEffect` 监听 `LOGIN_SUCCESS_EVENT`,登录成功后立即调 `refreshChildren()`
+3. **`components/LoginScreen.tsx`** + **`RegisterScreen.tsx`**:登录/注册成功后 `auth.setSession()` 之后调 `emitLoginSuccess()`
+
+### 部署
+- 前端 hash `index-BQy1yMku.js` ✅ HTTP 200
+- APK: `error-book-v24-data-load-fix.apk` (5.3MB)
+
+---
 
 ### 改动
 - `PrintPreviewScreen.tsx` `showAnswer` 默认值 `true` → `false`
