@@ -221,11 +221,12 @@ client_max_body_size 20m;  # OCR base64 大图必须放大
 
 | 版本 | 日期 | 主要变化 |
 |---|---|---|
-| **v28** | 2026-09-05 | 管理员gpssong:JWT注入isAdmin,账号管理仅管理员可见 |
-| **v29** | 2026-09-05 | config.html 配置数据改由后端存储,两端域名数据同步 |
-| **v30** | 2026-09-05 | AI练习页面:随机同步练习题(按科目生成)+打印 |
-| **v30b** | 2026-09-05 | config.html管理员面板:查看全部用户+套餐管理+额度重置 |
+| **v32** | 2026-09-05 | AI练习页面底部tab修复:`showNav`不再排除`aiPractice`,进入AI同步练习页底部导航正常显示 |
 | **v31** | 2026-09-05 | AI讲解LaTeX公式渲染:`mistakeReason/knowledgeExplained/stepByStepGuide` 用 KaTeX 正确显示 $\dfrac$ \log_2 等公式 |
+| **v30b** | 2026-09-05 | config.html管理员面板:查看全部用户+套餐管理+额度重置 |
+| **v30** | 2026-09-05 | AI练习页面:随机同步练习题(按科目生成)+打印 |
+| **v29** | 2026-09-05 | config.html 配置数据改由后端存储,两端域名数据同步 |
+| **v28** | 2026-09-05 | 管理员gpssong:JWT注入isAdmin,账号管理仅管理员可见 |
 | **v27** | 2026-09-05 | 付费墙:免费版每日 OCR 10次/AI 讲解 3次,Pro ¥18/月 Family ¥28/月,手动扫码充值 |
 | **v26** | 2026-09-05 | Android 物理返回键修复:装 `@capacitor/app@6.0.3`,非首页拦截 backButton 跳回首页,首页再返回才退出 |
 | **v25** | 2026-09-05 | App 端打印按钮修复:装 `@dimer47/capacitor-plugin-printer@2.0.4`,Android 走 native PrintManager(`printWebView` + `@media print` 自动隐藏工具栏) |
