@@ -72,12 +72,24 @@ body.is-webview #root {
 }
 
 /* 打印样式 */
+@page { size: A4; margin: 0; }
+
 @media print {
+  html, body {
+    background: #fff !important;
+    height: auto !important;
+    display: block !important;
+    align-items: stretch !important;
+    justify-content: stretch !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
   #root {
     width: 100%;
     height: auto;
     border-radius: 0;
     box-shadow: none;
+    overflow: visible;
   }
   .no-print {
     display: none !important;

@@ -53,7 +53,7 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-[#F8FAFC]" style={{ fontFamily: "'Nunito', sans-serif" }}>
+    <div className="flex flex-col h-full bg-[#F8FAFC] print:bg-white print:h-auto" style={{ fontFamily: "'Nunito', sans-serif" }}>
       <div className="bg-white px-4 pt-12 pb-4 shadow-sm print:hidden">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
@@ -160,7 +160,7 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
 
       <div className="flex-1 overflow-y-auto px-4 py-4 print:overflow-visible print:p-0">
         {/* A4 preview */}
-        <div className="bg-white rounded-2xl shadow-lg overflow-hidden print:shadow-none print:rounded-none" style={{ border: '1px solid #E2E8F0' }}>
+        <div className="bg-white rounded-2xl shadow-lg overflow-hidden print:shadow-none print:rounded-none print:w-[210mm] print:min-h-[297mm] print:mx-auto" style={{ border: '1px solid #E2E8F0' }}>
           {/* A4 header */}
           <div className="px-5 py-4 border-b border-slate-100" style={{ background: '#EFF6FF' }}>
             <div className="flex items-center justify-between">
@@ -178,7 +178,7 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
           </div>
 
           {/* Grid */}
-          <div className={`p-4 ${printLayout === '2列' ? 'grid grid-cols-2 gap-3' : 'space-y-4'}`}>
+          <div className={`p-4 print:py-8 print:px-10 print:gap-4 ${printLayout === '2列' ? 'grid grid-cols-2 gap-3' : 'space-y-4'}`}>
             {printErrors.map((err, idx) => {
               const answer = getAnswer(err)
               const similar = err.similarQuestions || []

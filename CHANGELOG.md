@@ -1,5 +1,33 @@
 # Changelog
 
+## v23 (2026-09-05) - 打印 A4 顶天立地 + 底部 tab 不打印
+
+### 修复
+**Bug 5**: 用户截图反馈打印时"A4 上下空得太多了,A4 纸浪费,最下面首页/错题/AI练习/我的 不需要打印"。
+
+**3 个根因**:
+1. **`body { display:flex; align-items:center; justify-content:center }` 在 `@media print` 没被重置** —— `index.css` 把 `#root`(375×812 浏览器壳)水平+垂直居中,打印时这个居中布局**仍然生效**,把 `#root`(内容撑高后)在 A4 纸上**垂直居中** → 视觉上 A4 上下都留白。
+2. **A4 容器没有强制 210mm×297mm 尺寸** —— `PrintPreviewScreen.tsx` 的 A4 容器只有内容高度(2 道错题时约 400px),远小于 297mm 纸 → 容器下方大片白底。
+3. **`App.tsx` 的 `showNav` 排除列表没包含 `printPreview`** → 底部 4 个 tab(首页/错题/AI练习/我的)跟着打印。BottomNav 外层 div 也没加 `print:hidden` 兜底。
+
+### 改动(4 个文件)
+1. **`index.css` `@media print` 块扩展**:
+   - 新增 `@page { size: A4; margin: 0 }`
+   - `@media print` 内 `html, body` 用 `!important` 重置 `display/align-items/justify-content/background`,解除 flex 居中
+2. **`App.tsx`**:
+   - 第 88 行 `BottomNav` 加 `print:hidden` 兜底
+   - 第 104 行 `showNav` 排除列表 `['errorDetail', 'camera']` → `['errorDetail', 'camera', 'printPreview']`
+3. **`PrintPreviewScreen.tsx`**:
+   - 第 56 行最外层 `flex flex-col h-full bg-[#F8FAFC]` 加 `print:bg-white print:h-auto`
+   - 第 163 行 A4 容器加 `print:w-[210mm] print:min-h-[297mm] print:mx-auto` —— 强制等于 A4 纸尺寸
+   - 第 181 行 grid 加 `print:py-8 print:px-10 print:gap-4` —— A4 内部版心更宽松
+
+### 部署
+- 重新构建前端 + 部署到 192.168.0.14
+- APK: `error-book-v23-print-tight.apk`
+
+---
+
 ## v22 (2026-09-05) - "含参考答案"开关变真开关
 
 ### 修复

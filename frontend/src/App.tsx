@@ -85,7 +85,7 @@ function AppContent() {
   ]
 
   const BottomNav = () => (
-    <div className="flex items-center bg-white border-t border-slate-100" style={{ paddingBottom: 'env(safe-area-inset-bottom, 8px)' }}>
+    <div className="flex items-center bg-white border-t border-slate-100 print:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom, 8px)' }}>
       {navItems.map((item) => (
         <button
           key={item.key}
@@ -101,7 +101,7 @@ function AppContent() {
   )
 
   // 根据当前屏幕决定渲染内容和是否显示底部导航
-  const showNav = !['errorDetail', 'camera'].includes(screen)
+  const showNav = !['errorDetail', 'camera', 'printPreview'].includes(screen)
 
   return (
     <div className="flex flex-col" style={{ height: '100%' }}>
