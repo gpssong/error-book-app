@@ -1,0 +1,1301 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>错题本配置中心</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+      background: #F1F5F9;
+      color: #1E293B;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 16px 16px 48px;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 0 20px;
+      border-bottom: 1px solid #E2E8F0;
+      margin-bottom: 16px;
+    }
+    .header-icon {
+      width: 44px; height: 44px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #2563EB, #7C3AED);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+    }
+    .header-title { font-size: 20px; font-weight: 800; }
+    .header-sub { font-size: 12px; color: #64748B; margin-top: 2px; }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      background: white;
+      border-radius: 14px;
+      padding: 4px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .tab {
+      flex: 1;
+      padding: 10px 8px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 700;
+      color: #64748B;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.15s;
+      border: none;
+      background: none;
+    }
+    .tab:hover { color: #2563EB; background: #EFF6FF; }
+    .tab.active { background: #2563EB; color: white; }
+
+    /* Cards */
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 18px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      border: 1px solid #E2E8F0;
+    }
+    .card-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #475569;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-title .icon { font-size: 16px; }
+
+    /* Forms */
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      color: #64748B;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    input[type="text"], input[type="password"], select {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1.5px solid #E2E8F0;
+      border-radius: 10px;
+      font-size: 13px;
+      font-family: inherit;
+      color: #1E293B;
+      background: #F8FAFC;
+      transition: border-color 0.15s;
+      outline: none;
+    }
+    input:focus, select:focus {
+      border-color: #2563EB;
+      background: white;
+    }
+    .field { margin-bottom: 12px; }
+    .field-hint { font-size: 11px; color: #94A3B8; margin-top: 4px; }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 9px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary { background: #2563EB; color: white; }
+    .btn-primary:hover { background: #1D4ED8; }
+    .btn-success { background: #10B981; color: white; }
+    .btn-danger  { background: #EF4444; color: white; }
+    .btn-ghost   { background: #F1F5F9; color: #475569; border: 1.5px solid #E2E8F0; }
+    .btn-ghost:hover { background: #E2E8F0; }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+    .btn-block { width: 100%; }
+    .btn-row { display: flex; gap: 8px; margin-top: 12px; }
+    .btn-row .btn { flex: 1; }
+
+    /* Account Card */
+    .account-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px;
+      border: 1.5px solid #E2E8F0;
+      border-radius: 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .account-card:hover { border-color: #BFDBFE; background: #EFF6FF; }
+    .account-card.active { border-color: #2563EB; background: #EFF6FF; }
+    .avatar {
+      width: 42px; height: 42px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #2563EB, #7C3AED);
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-size: 18px; font-weight: 800;
+      flex-shrink: 0;
+    }
+    .account-info { flex: 1; min-width: 0; }
+    .account-name { font-size: 14px; font-weight: 700; }
+    .account-email {
+      font-size: 12px; color: #64748B;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .account-badge {
+      font-size: 10px; font-weight: 700;
+      padding: 3px 8px; border-radius: 6px;
+      background: #2563EB; color: white;
+    }
+    .account-badge.current { background: #10B981; }
+    .add-account-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px;
+      border: 2px dashed #CBD5E1;
+      border-radius: 12px;
+      color: #64748B;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .add-account-btn:hover { border-color: #2563EB; color: #2563EB; }
+
+    /* Key Card */
+    .key-card {
+      border: 1.5px solid #E2E8F0;
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 10px;
+      background: #FAFBFC;
+    }
+    .key-card.active { border-color: #2563EB; background: #EFF6FF; }
+    .key-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .key-name {
+      font-size: 14px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .key-status {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+    .key-status.on  { background: #D1FAE5; color: #065F46; }
+    .key-status.off { background: #FEE2E2; color: #991B1B; }
+    .key-status.current { background: #2563EB; color: white; }
+    .key-provider { font-size: 11px; color: #64748B; margin-bottom: 10px; }
+    .key-detail {
+      font-size: 12px; color: #94A3B8;
+      font-family: monospace; margin-top: 4px;
+    }
+    .key-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #F1F5F9;
+    }
+    .key-actions .btn { flex: 1; }
+    .key-metrics {
+      display: flex;
+      gap: 12px;
+      font-size: 11px;
+      color: #64748B;
+      margin-top: 8px;
+    }
+    .key-metrics span { font-weight: 700; color: #2563EB; }
+
+    /* Toggle */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid #F1F5F9;
+    }
+    .toggle-row:last-child { border-bottom: none; }
+    .toggle-label { font-size: 13px; font-weight: 600; }
+    .toggle-desc { font-size: 11px; color: #94A3B8; margin-top: 2px; }
+    .toggle {
+      width: 44px; height: 24px;
+      background: #CBD5E1;
+      border-radius: 12px;
+      position: relative;
+      cursor: pointer;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    .toggle.on { background: #2563EB; }
+    .toggle::after {
+      content: '';
+      position: absolute;
+      width: 20px; height: 20px;
+      background: white;
+      border-radius: 50%;
+      top: 2px; left: 2px;
+      transition: transform 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .toggle.on::after { transform: translateX(20px); }
+
+    /* Status */
+    .status {
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-top: 10px;
+      display: none;
+      white-space: pre-wrap;
+    }
+    .status.show { display: block; }
+    .status.success { background: #ECFDF5; color: #065F46; border: 1px solid #A7F3D0; }
+    .status.error   { background: #FEF2F2; color: #991B1B; border: 1px solid #FECACA; }
+    .status.info    { background: #EFF6FF; color: #1E40AF; border: 1px solid #BFDBFE; }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.4);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 16px;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: white;
+      border-radius: 20px;
+      padding: 24px;
+      width: 100%;
+      max-width: 440px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    }
+    .modal-title { font-size: 18px; font-weight: 800; margin-bottom: 16px; }
+    .modal-close {
+      float: right;
+      background: none; border: none;
+      font-size: 20px; cursor: pointer;
+      color: #94A3B8;
+    }
+    .modal-close:hover { color: #1E293B; }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 24px;
+      font-size: 11px;
+      color: #94A3B8;
+    }
+    .footer a { color: #2563EB; text-decoration: none; }
+
+    .hidden { display: none !important; }
+
+    .empty {
+      text-align: center;
+      padding: 24px;
+      color: #94A3B8;
+      font-size: 13px;
+    }
+    .empty .icon { font-size: 32px; margin-bottom: 8px; }
+  
+    /* ─── Admin Panel ─── */
+    .admin-user-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px;
+      border: 1.5px solid #E2E8F0;
+      border-radius: 12px;
+      margin-bottom: 10px;
+      background: #FAFBFC;
+    }
+    .admin-user-info { flex: 1; min-width: 0; }
+    .admin-user-name { font-size: 14px; font-weight: 700; }
+    .admin-user-email { font-size: 12px; color: #64748B; }
+    .admin-user-joined { font-size: 11px; color: #94A3B8; margin-top: 2px; }
+    .plan-badge {
+      font-size: 10px; font-weight: 700;
+      padding: 3px 8px; border-radius: 6px;
+      display: inline-block; margin-bottom: 4px;
+    }
+    .plan-free  { background: #F1F5F9; color: #64748B; }
+    .plan-pro   { background: #FEF3C7; color: #92400E; }
+    .plan-family{ background: #EDE9FE; color: #5B21B6; }
+    .admin-user-actions { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+    .admin-user-actions .btn { white-space: nowrap; }
+    .subscription-detail {
+      font-size: 11px; color: #64748B; margin-top: 4px;
+    }
+    .subscription-detail span { color: #1E293B; font-weight: 600; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="header-icon">⚙️</div>
+    <div>
+      <div class="header-title">配置中心</div>
+      <div class="header-sub">账号 · AI Key · OCR 引擎 · 备用服务</div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="account" onclick="switchTab('account')">👤 账号</button>
+    <button class="tab" data-tab="ai" onclick="switchTab('ai')">🤖 AI Key</button>
+    <button class="tab" data-tab="ocr" onclick="switchTab('ocr')">📷 OCR</button>
+    <button class="tab" data-tab="fallback" onclick="switchTab('fallback')">🔄 备用</button>
+    <button class="tab" id="adminTabBtn" style="display:none" data-tab="admin" onclick="switchTab('admin')">🛡️ 管理员</button>
+  </div>
+
+  <!-- 管理员面板（仅管理员可见，通过 Token 鉴权） -->
+  <div id="tab-admin" class="tab-content hidden">
+    <div class="card">
+      <div class="card-title"><span class="icon">👥</span> 已注册用户
+        <span style="font-size:11px;font-weight:400;color:#94A3B8;margin-left:6px">用任意管理员账号登录后自动显示</span>
+      </div>
+      <div id="adminUserList"></div>
+    </div>
+  </div>
+
+  <!-- Tab 1: 账号 -->
+  <div id="tab-account" class="tab-content">
+    <div class="card">
+      <div class="card-title"><span class="icon">👥</span> 家长账号</div>
+      <div id="accountList"></div>
+      <div class="add-account-btn" onclick="showAccountModal()">
+        <span>➕</span> 添加新账号
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="icon">🔐</span> 当前状态</div>
+      <div id="accountStatus" class="empty">
+        <div class="icon">🔒</div>
+        <div>未登录任何账号</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 2: AI Key -->
+  <div id="tab-ai" class="tab-content hidden">
+    <div class="card">
+      <div class="card-title">
+        <span class="icon">🧠</span> AI 文本模型 Key
+        <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="addKey('ai')">+ 添加 Key</button>
+      </div>
+      <div id="aiKeyList"></div>
+    </div>
+  </div>
+
+  <!-- Tab 3: OCR -->
+  <div id="tab-ocr" class="tab-content hidden">
+    <div class="card">
+      <div class="card-title">
+        <span class="icon">📷</span> OCR 引擎 Key
+        <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="addKey('ocr')">+ 添加 Key</button>
+      </div>
+      <div id="ocrKeyList"></div>
+      <div class="field-hint" style="margin-top:10px">
+        💡 TextIn 推荐用于试卷场景（去手写+公式识别），Agnes/MiniMax Vision 作为备选
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="icon">📊</span> OCR 流水线状态</div>
+      <div id="pipelineStatus"></div>
+    </div>
+  </div>
+
+  <!-- Tab 4: 备用 -->
+  <div id="tab-fallback" class="tab-content hidden">
+    <div class="card">
+      <div class="card-title"><span class="icon">🔄</span> 故障转移配置</div>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">启用自动降级</div>
+          <div class="toggle-desc">主 Key 失败时自动切换到备用 Key</div>
+        </div>
+        <div class="toggle on" id="toggleAutoFallback" onclick="toggleSetting(this)"></div>
+      </div>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">并行请求（加速）</div>
+          <div class="toggle-desc">同时请求多个 Key，取最快响应</div>
+        </div>
+        <div class="toggle" id="toggleParallel" onclick="toggleSetting(this)"></div>
+      </div>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">显示详细日志</div>
+          <div class="toggle-desc">在控制台输出每次 API 调用详情</div>
+        </div>
+        <div class="toggle" id="toggleVerbose" onclick="toggleSetting(this)"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="icon">📝</span> 备用 AI Key</div>
+      <div id="fallbackKeyList"></div>
+      <button class="btn btn-ghost btn-block" style="margin-top:10px" onclick="addKey('fallback')">+ 添加备用 Key</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="icon">🧪</span> 连接测试</div>
+      <div class="field">
+        <label>选择 Key 进行测试</label>
+        <select id="testKeySelect" onchange="loadTestKey()">
+          <option value="">-- 选择 --</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>模型</label>
+        <input type="text" id="testModel" placeholder="例如：agnes-2.5-flash" />
+      </div>
+      <button class="btn btn-primary btn-block" onclick="testKey()">🔌 测试连接</button>
+      <div class="status" id="testResult"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Account Modal -->
+<div class="modal-overlay" id="accountModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('accountModal')">&times;</button>
+    <div class="modal-title" id="accountModalTitle">家长登录</div>
+    <div class="field">
+      <label>用户名</label>
+      <input type="text" id="accUsername" placeholder="用户名或邮箱" />
+    </div>
+    <div class="field">
+      <label>密码</label>
+      <input type="password" id="accPassword" placeholder="至少 6 位" />
+    </div>
+    <div class="field" id="accEmailField" style="display:none">
+      <label>邮箱</label>
+      <input type="email" id="accEmail" placeholder="用于登录和找回" />
+    </div>
+    <div class="field" id="accPassword2Field" style="display:none">
+      <label>确认密码</label>
+      <input type="password" id="accPassword2" placeholder="再次输入密码" />
+    </div>
+    <div class="status" id="accountModalStatus"></div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="closeModal('accountModal')">取消</button>
+      <button class="btn btn-primary" id="accountModalAction" onclick="submitAccount()">登录</button>
+    </div>
+    <div style="text-align:center;margin-top:12px;font-size:12px;color:#64748B">
+      <span id="switchModeText">还没有账号？</span>
+      <a href="#" onclick="toggleAccountMode(); return false;" id="switchModeLink">去注册</a>
+    </div>
+  </div>
+</div>
+
+<!-- Key Modal -->
+<div class="modal-overlay" id="keyModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('keyModal')">&times;</button>
+    <div class="modal-title" id="keyModalTitle">添加 Key</div>
+    <input type="hidden" id="keyEditId" />
+    <input type="hidden" id="keyCategory" />
+    <div class="field">
+      <label>名称 / 标签</label>
+      <input type="text" id="keyName" placeholder="例如：主账号 / 备用 / Agnes 生产" />
+    </div>
+    <div class="field">
+      <label>Provider</label>
+      <select id="keyProvider" onchange="onProviderChange()">
+        <option value="agnes">Agnes AI</option>
+        <option value="minimax">MiniMax</option>
+        <option value="textin">TextIn</option>
+        <option value="openai">OpenAI</option>
+        <option value="custom">自定义</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Base URL</label>
+      <input type="text" id="keyBaseUrl" placeholder="https://api.example.com/v1" />
+    </div>
+    <div class="field" id="textinCredentials" style="display:none">
+      <label>x-ti-app-id</label>
+      <input type="text" id="keyAppId" placeholder="合合信息 App ID" />
+    </div>
+    <div class="field" id="textinCredentials2" style="display:none">
+      <label>x-ti-secret-code</label>
+      <input type="password" id="keySecretCode" placeholder="合合信息 Secret Code" />
+    </div>
+    <div class="field" id="valueField">
+      <label>API Key</label>
+      <input type="password" id="keyValue" placeholder="sk-..." />
+    </div>
+    <div class="field">
+      <label>默认模型</label>
+      <input type="text" id="keyDefaultModel" placeholder="agnes-2.5-flash" />
+    </div>
+    <div class="field">
+      <label>备注</label>
+      <input type="text" id="keyNote" placeholder="可选" />
+    </div>
+    <div class="status" id="keyModalStatus"></div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="closeModal('keyModal')">取消</button>
+      <button class="btn btn-primary" onclick="submitKey()">保存</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- 编辑套餐 Modal -->
+<div class="modal-overlay" id="editSubModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('editSubModal')">&times;</button>
+    <div class="modal-title">编辑用户套餐</div>
+    <div style="font-size:13px;color:#64748B;margin-bottom:12px">用户：<span id="editSubUsername" style="font-weight:700;color:#1E293B"></span></div>
+    <input type="hidden" id="editSubUserId" />
+    <div class="field">
+      <label>套餐类型</label>
+      <select id="editSubPlan" onchange="document.getElementById('childrenCountField').style.display=(this.value==='family')?'block':'none'">
+        <option value="free">免费版（每日 OCR 10次 / AI 3次）</option>
+        <option value="pro">Pro ¥18/月（无限 AI）</option>
+        <option value="family">Family ¥28/月（无限 AI + 5 个子账号）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>到期时间</label>
+      <input type="date" id="editSubExpiresAt" placeholder="留空 = 永久有效" />
+    </div>
+    <div class="field" id="childrenCountField" style="display:none">
+      <label>最大孩子数</label>
+      <input type="number" id="editSubChildrenCount" min="1" max="10" value="1" />
+      <div class="field-hint">免费版/Pro 最多 1 个，Family 最多 5 个</div>
+    </div>
+    <div class="status" id="editSubStatus"></div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="closeModal('editSubModal')">取消</button>
+      <button class="btn btn-primary" onclick="submitEditSub()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  配置保存在服务器<br>
+  <a href="#" onclick="clearAll(); return false;">清除所有配置</a>
+</div>
+
+<script>
+// ─── 数据层：服务端 API + 本地缓存 ─────────────────────────────────────────────
+let accounts    = []
+let keys        = []
+let current     = null
+let settings    = { autoFallback: true, parallel: false, verbose: false }
+
+async function loadConfig() {
+  try {
+    const resp = await fetch(`${getApiBase()}/api/config`)
+    const data = await resp.json()
+    accounts    = data.accounts || []
+    keys        = data.keys || []
+    current     = data.current || null
+    settings    = data.settings || { autoFallback: true, parallel: false, verbose: false }
+    syncToggles()
+    renderAccounts()
+    renderPipelineStatus()
+    loadAdmin()
+  } catch (e) {
+    showStatus(document.getElementById('accountStatus'), '加载配置失败: ' + e.message, 'error')
+  }
+}
+
+async function saveConfig() {
+  try {
+    await fetch(`${getApiBase()}/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accounts, keys, current, settings }),
+    })
+  } catch (e) {
+    showStatus(document.getElementById('accountStatus'), '保存失败: ' + e.message, 'error')
+  }
+}
+
+function syncToggles() {
+  const setToggle = (id, val) => {
+    const el = document.getElementById(id)
+    if (el) el.classList.toggle('on', !!val)
+  }
+  setToggle('toggleAutoFallback', settings.autoFallback)
+  setToggle('toggleParallel', settings.parallel)
+  setToggle('toggleVerbose', settings.verbose)
+}
+
+// ─── Tabs ───
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name))
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'))
+  document.getElementById('tab-' + name).classList.remove('hidden')
+  if (name === 'account')   renderAccounts()
+  if (name === 'ai')        renderKeys('ai')
+  if (name === 'ocr')       { renderKeys('ocr'); renderPipelineStatus() }
+  if (name === 'fallback')  { renderKeys('fallback'); populateTestSelect() }
+  if (name === 'admin')    renderAdminUsers()
+}
+
+// ─── Accounts ───
+function renderAccounts() {
+  const list = document.getElementById('accountList')
+  if (!accounts.length) {
+    list.innerHTML = '<div class="empty"><div class="icon">👤</div><div>还没有账号</div></div>'
+  } else {
+    list.innerHTML = accounts.map((a, i) => `
+      <div class="account-card ${a.id === current?.id ? 'active' : ''}" onclick="selectAccount(${i})">
+        <div class="avatar">${(a.username || '?')[0].toUpperCase()}</div>
+        <div class="account-info">
+          <div class="account-name">${esc(a.username)}</div>
+          <div class="account-email">${esc(a.email || '')}</div>
+        </div>
+        ${a.id === current?.id ? '<span class="account-badge current">当前</span>' : ''}
+        <button class="btn btn-danger btn-sm" style="flex-shrink:0" onclick="event.stopPropagation();removeAccount(${i})">✕</button>
+      </div>
+    `).join('')
+  }
+  renderAccountStatus()
+}
+
+function renderAccountStatus() {
+  const el = document.getElementById('accountStatus')
+  if (current) {
+    const a = accounts.find(x => x.id === current.id)
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="avatar" style="width:52px;height:52px;font-size:22px">${(a?.username||'?')[0].toUpperCase()}</div>
+        <div>
+          <div style="font-size:16px;font-weight:800">${esc(a?.username || current.username)}</div>
+          <div style="font-size:12px;color:#64748B">${esc(a?.email || '')}</div>
+          <div style="font-size:11px;color:#94A3B8;margin-top:4px">已登录 · 令牌有效期至 ${formatExp(current.exp)}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="logout()">🚪 退出</button>
+      </div>
+    `
+    el.className = ''
+  } else {
+    el.innerHTML = '<div class="empty"><div class="icon">🔒</div><div>未登录任何账号</div></div>'
+    el.className = 'empty'
+  }
+}
+
+let accountMode = 'login'
+function toggleAccountMode() {
+  accountMode = accountMode === 'login' ? 'register' : 'login'
+  document.getElementById('accEmailField').style.display = accountMode === 'register' ? 'block' : 'none'
+  document.getElementById('accPassword2Field').style.display = accountMode === 'register' ? 'block' : 'none'
+  document.getElementById('switchModeText').textContent = accountMode === 'login' ? '还没有账号？' : '已有账号？'
+  document.getElementById('switchModeLink').textContent = accountMode === 'login' ? '去注册' : '去登录'
+  document.getElementById('accountModalTitle').textContent = accountMode === 'login' ? '家长登录' : '注册账号'
+  document.getElementById('accountModalAction').textContent = accountMode === 'login' ? '登录' : '注册并登录'
+}
+
+function showAccountModal() {
+  document.getElementById('accountModal').classList.add('show')
+  document.getElementById('accUsername').value = ''
+  document.getElementById('accEmail').value = ''
+  document.getElementById('accPassword').value = ''
+  document.getElementById('accPassword2').value = ''
+  document.getElementById('accountModalStatus').className = 'status'
+  accountMode = 'login'
+  toggleAccountMode()
+}
+
+async function submitAccount() {
+  const username = document.getElementById('accUsername').value.trim()
+  const email = document.getElementById('accEmail').value.trim()
+  const password = document.getElementById('accPassword').value
+  const statusEl = document.getElementById('accountModalStatus')
+
+  if (!username || !password) {
+    showStatus(statusEl, '请填写完整信息', 'error')
+    return
+  }
+  if (password.length < 6) {
+    showStatus(statusEl, '密码至少 6 位', 'error')
+    return
+  }
+  if (accountMode === 'register' && !email) {
+    showStatus(statusEl, '邮箱为必填项', 'error')
+    return
+  }
+  if (accountMode === 'register' && password !== document.getElementById('accPassword2').value) {
+    showStatus(statusEl, '两次密码不一致', 'error')
+    return
+  }
+
+  statusEl.textContent = '处理中...'
+  statusEl.className = 'status show info'
+
+  try {
+    const action = accountMode === 'login' ? 'login' : 'register'
+    const body = accountMode === 'login'
+      ? { account: username, password }
+      : { username, email, password }
+
+    const resp = await fetch(`${getApiBase()}/api/auth/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const data = await resp.json()
+    if (!resp.ok) throw new Error(data.error || '请求失败')
+
+    const account = {
+      id: data.user.id,
+      username: data.user.username,
+      email: data.user.email,
+      displayName: data.user.displayName,
+      token: data.token,
+      exp: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    }
+
+    if (accountMode === 'login') {
+      const existing = accounts.findIndex(a => a.id === account.id)
+      if (existing >= 0) accounts[existing] = account
+      else accounts.push(account)
+    }
+    current = account
+    await saveConfig()
+    closeModal('accountModal')
+    renderAccounts()
+    showStatus(statusEl, accountMode === 'login' ? '✅ 登录成功' : '✅ 注册成功', 'success')
+  } catch (e) {
+    showStatus(statusEl, '❌ ' + e.message, 'error')
+  }
+}
+
+function selectAccount(i) {
+  current = accounts[i]
+  saveConfig()
+  renderAccounts()
+}
+
+function removeAccount(i) {
+  if (!confirm('确定删除该账号？')) return
+  accounts.splice(i, 1)
+  if (current && current.id === accounts[i]?.id) current = null
+  saveConfig()
+  renderAccounts()
+}
+
+function logout() {
+  current = null
+  saveConfig()
+  renderAccounts()
+}
+
+// ─── Keys ───
+let keyEditId = null
+let keyCategory = null
+
+function renderKeys(category) {
+  const list = document.getElementById(category + 'KeyList')
+  const filtered = keys.filter(k => k.category === category)
+  if (!filtered.length) {
+    list.innerHTML = '<div class="empty"><div class="icon">🔑</div><div>还没有 ' + categoryName(category) + ' Key</div></div>'
+    return
+  }
+  list.innerHTML = filtered.map(k => {
+    const isTextin = k.provider === 'textin'
+    const detailLabel = isTextin
+      ? `appId: ${(k.appId || '').slice(0, 6)}...${(k.appId || '').slice(-4)} · secret: ***${(k.secretCode || '').slice(-4)}`
+      : `sk-***${(k.value || '').slice(-4)}`
+    return `
+    <div class="key-card ${k.current ? 'active' : ''}">
+      <div class="key-card-header">
+        <span class="key-name">${providerIcon(k.provider)} ${esc(k.name)}</span>
+        <span class="key-status ${k.current ? 'current' : (k.enabled ? 'on' : 'off')}">${k.current ? '当前使用' : (k.enabled ? '已启用' : '已停用')}</span>
+      </div>
+      <div class="key-provider">${providerLabel(k.provider)} · ${esc(k.base_url || '默认地址')}</div>
+      <div class="key-detail">${esc(detailLabel)}</div>
+      ${k.note ? `<div class="field-hint" style="margin-top:6px">📝 ${esc(k.note)}</div>` : ''}
+      <div class="key-metrics">
+        <div>调用 <span>${k.usage || 0}</span> 次</div>
+        <div>最后使用 <span>${k.lastUsed ? formatDate(k.lastUsed) : '从未'}</span></div>
+      </div>
+      <div class="key-actions">
+        <button class="btn btn-ghost btn-sm" onclick="editKey('${k.id}')">编辑</button>
+        <button class="btn btn-${k.current ? 'success' : 'ghost'} btn-sm" onclick="setCurrentKey('${k.id}')">${k.current ? '✓ 当前' : '设为当前'}</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleKeyEnabled('${k.id}')">${k.enabled ? '停用' : '启用'}</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteKey('${k.id}')">删除</button>
+      </div>
+    </div>
+  `
+  }).join('')
+}
+
+function addKey(category) {
+  keyEditId = null
+  keyCategory = category
+  document.getElementById('keyModalTitle').textContent = '添加 ' + categoryName(category) + ' Key'
+  document.getElementById('keyEditId').value = ''
+  document.getElementById('keyCategory').value = category
+  document.getElementById('keyName').value = ''
+  onProviderChange()
+  document.getElementById('keyValue').value = ''
+  document.getElementById('keyAppId').value = ''
+  document.getElementById('keySecretCode').value = ''
+  document.getElementById('keyDefaultModel').value = ''
+  document.getElementById('keyNote').value = ''
+  document.getElementById('keyModalStatus').className = 'status'
+  document.getElementById('keyModal').classList.add('show')
+}
+
+function editKey(id) {
+  const k = keys.find(x => x.id === id)
+  if (!k) return
+  keyEditId = id
+  keyCategory = k.category
+  document.getElementById('keyModalTitle').textContent = '编辑 ' + categoryName(k.category) + ' Key'
+  document.getElementById('keyEditId').value = id
+  document.getElementById('keyCategory').value = k.category
+  document.getElementById('keyName').value = k.name
+  document.getElementById('keyProvider').value = k.provider
+  onProviderChange()
+  document.getElementById('keyBaseUrl').value = k.base_url || ''
+  document.getElementById('keyValue').value = k.value || ''
+  document.getElementById('keyAppId').value = k.appId || ''
+  document.getElementById('keySecretCode').value = k.secretCode || ''
+  document.getElementById('keyDefaultModel').value = k.default_model || ''
+  document.getElementById('keyNote').value = k.note || ''
+  document.getElementById('keyModal').classList.add('show')
+}
+
+function onProviderChange() {
+  const provider = document.getElementById('keyProvider').value
+  const presets = {
+    agnes:    { url: 'https://apihub.agnes-ai.com/v1', model: 'agnes-2.5-flash' },
+    minimax:  { url: 'https://api.minimax.io/v1',      model: 'MiniMax-M3' },
+    textin:   { url: 'https://api.textin.com',          model: '' },
+    openai:   { url: 'https://api.openai.com/v1',       model: 'gpt-4o-mini' },
+    custom:   { url: '',                                model: '' },
+  }
+  const p = presets[provider] || presets.custom
+  document.getElementById('keyBaseUrl').value = p.url
+  document.getElementById('keyDefaultModel').value = p.model
+
+  // TextIn 需要双凭证 (x-ti-app-id / x-ti-secret-code)
+  const isTextin = provider === 'textin'
+  document.getElementById('textinCredentials').style.display  = isTextin ? 'block' : 'none'
+  document.getElementById('textinCredentials2').style.display = isTextin ? 'block' : 'none'
+  document.getElementById('valueField').style.display        = isTextin ? 'none' : 'block'
+}
+
+function submitKey() {
+  const name        = document.getElementById('keyName').value.trim()
+  const provider    = document.getElementById('keyProvider').value
+  const base_url    = document.getElementById('keyBaseUrl').value.trim()
+  const value       = document.getElementById('keyValue').value.trim()
+  const appId       = document.getElementById('keyAppId').value.trim()
+  const secretCode  = document.getElementById('keySecretCode').value.trim()
+  const model       = document.getElementById('keyDefaultModel').value.trim()
+  const note        = document.getElementById('keyNote').value.trim()
+
+  // TextIn 需要双凭证
+  if (provider === 'textin') {
+    if (!name || !appId || !secretCode) {
+      showStatus(document.getElementById('keyModalStatus'), 'TextIn 需要填写名称、x-ti-app-id、x-ti-secret-code', 'error')
+      return
+    }
+  } else if (!name || !value) {
+    showStatus(document.getElementById('keyModalStatus'), '请填写名称和 API Key', 'error')
+    return
+  }
+
+  const data = { name, provider, base_url, value, appId, secretCode, default_model: model, note }
+
+  if (keyEditId) {
+    const k = keys.find(x => x.id === keyEditId)
+    if (k) Object.assign(k, data)
+  } else {
+    keys.push({
+      id: 'key_' + Date.now(),
+      category: keyCategory,
+      ...data,
+      enabled: true,
+      current: false,
+      usage: 0,
+      lastUsed: null,
+      createdAt: new Date().toISOString(),
+    })
+  }
+
+  saveConfig()
+  closeModal('keyModal')
+  renderKeys(keyCategory)
+}
+
+function setCurrentKey(id) {
+  keys.forEach(k => { k.current = k.id === id })
+  saveConfig()
+  renderKeys(keys.find(k => k.id === id)?.category)
+}
+
+function toggleKeyEnabled(id) {
+  const k = keys.find(x => x.id === id)
+  if (k) k.enabled = !k.enabled
+  saveConfig()
+  renderKeys(k?.category)
+}
+
+function deleteKey(id) {
+  if (!confirm('确定删除此 Key？')) return
+  keys = keys.filter(k => k.id !== id)
+  saveConfig()
+  const cat = keys.find(k => k.id === id)?.category
+  renderKeys(cat)
+}
+
+// ─── Pipeline Status ───
+function renderPipelineStatus() {
+  const el = document.getElementById('pipelineStatus')
+  const ocrKeys = keys.filter(k => k.category === 'ocr')
+  const textinKey  = ocrKeys.find(k => k.provider === 'textin' && k.enabled)
+  const minimaxKey = ocrKeys.find(k => k.provider === 'minimax' && k.enabled)
+
+  const textinOk  = !!textinKey
+  const minimaxOk = !!minimaxKey
+
+  const stages = [
+    'auto-rotate', 'crop-margin', 'gray-scale',
+    'inpaint-handwriting (frontend)',
+    textinOk ? 'textin-erase' : 'textin-erase (跳过)',
+    textinOk ? 'textin-formula' : 'textin-formula (跳过)',
+    textinOk ? 'textin-text' : 'textin-text (跳过)',
+    minimaxOk ? 'MiniMax-semantic' : 'MiniMax-semantic (跳过)',
+  ]
+
+  el.innerHTML = `
+    <div style="margin-bottom:10px">
+      <div style="font-size:12px;color:#64748B;margin-bottom:6px">流水线阶段</div>
+      ${stages.map((s, i) => `
+        <div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;color:${s.includes('(跳过)') ? '#94A3B8' : '#334155'}">
+          <span style="color:#94A3B8;width:20px">${i + 1}.</span>
+          <span>${esc(s)}</span>
+        </div>
+      `).join('')}
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <div style="padding:8px 14px;border-radius:8px;background:${textinOk ? '#D1FAE5' : '#FEE2E2'};font-size:12px;font-weight:700;color:${textinOk ? '#065F46' : '#991B1B'}">
+        TextIn: ${textinOk ? '✅ 已配置' : '❌ 未配置'}
+      </div>
+      <div style="padding:8px 14px;border-radius:8px;background:${minimaxOk ? '#D1FAE5' : '#FEE2E2'};font-size:12px;font-weight:700;color:${minimaxOk ? '#065F46' : '#991B1B'}">
+        MiniMax: ${minimaxOk ? '✅ 已配置' : '❌ 未配置'}
+      </div>
+    </div>
+  `
+}
+
+// ─── Fallback Test ───
+function populateTestSelect() {
+  const sel = document.getElementById('testKeySelect')
+  const all = keys.filter(k => k.category === 'fallback' && k.enabled)
+  sel.innerHTML = '<option value="">-- 选择备用 Key --</option>' +
+    all.map(k => `<option value="${k.id}">${esc(k.name)} (${providerLabel(k.provider)})</option>`).join('')
+}
+
+function loadTestKey() {
+  const id = document.getElementById('testKeySelect').value
+  const k = keys.find(x => x.id === id)
+  if (k) document.getElementById('testModel').value = k.default_model || ''
+}
+
+async function testKey() {
+  const id = document.getElementById('testKeySelect').value
+  const model = document.getElementById('testModel').value.trim()
+  const statusEl = document.getElementById('testResult')
+  if (!id) { showStatus(statusEl, '请选择一个 Key', 'error'); return }
+  if (!model) { showStatus(statusEl, '请填写模型名', 'error'); return }
+
+  const k = keys.find(x => x.id === id)
+  statusEl.textContent = '测试中...'
+  statusEl.className = 'status show info'
+
+  try {
+    const baseUrl = k.base_url?.replace(/\/$/, '') || 'https://api.openai.com/v1'
+    const resp = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${k.value}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: '你好，请用一句话回复' }],
+        max_tokens: 50,
+      }),
+    })
+    const data = await resp.json()
+    if (resp.ok) {
+      const reply = data.choices?.[0]?.message?.content || '无内容'
+      showStatus(statusEl, `✅ 连接成功！\n${reply.slice(0, 200)}`, 'success')
+    } else {
+      throw new Error(data.error?.message || `HTTP ${resp.status}`)
+    }
+  } catch (e) {
+    showStatus(statusEl, `❌ ${e.message}`, 'error')
+  }
+}
+
+// ─── Settings ───
+function toggleSetting(el) {
+  el.classList.toggle('on')
+  const key = el.id.replace('toggle', '').toLowerCase()
+  settings[key] = el.classList.contains('on')
+  saveConfig()
+}
+
+// ─── Helpers ───
+function getApiBase() {
+  // Capacitor WebView（file:// 或 capacitor:// 协议）直连外网
+  if (window.location.protocol === 'file:' || window.location.protocol === 'capacitor:') {
+    return 'http://error.93gushi.com:4040'
+  }
+  // 通过 nginx 访问时，API 走同域名但固定端口 4040（HTTP）
+  const host = window.location.hostname
+  if (host === 'error.93gushi.com') return 'http://' + host + ':4040'
+  return window.location.origin
+}
+function esc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+function showStatus(el, msg, type) {
+  el.textContent = msg
+  el.className = `status show ${type}`
+  if (type === 'success') setTimeout(() => el.classList.remove('show'), 4000)
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('show')
+}
+function providerIcon(p) {
+  const map = { agnes: '🤖', minimax: '🔵', textin: '📄', openai: '🟢', custom: '🔗' }
+  return map[p] || '🔑'
+}
+function providerLabel(p) {
+  const map = { agnes: 'Agnes AI', minimax: 'MiniMax', textin: 'TextIn', openai: 'OpenAI', custom: '自定义' }
+  return map[p] || p
+}
+function categoryName(cat) {
+  const map = { ai: 'AI 文本', ocr: 'OCR', fallback: '备用' }
+  return map[cat] || cat
+}
+function formatExp(ts) {
+  if (!ts) return '?'
+  const d = new Date(ts)
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+function formatDate(iso) {
+  if (!iso) return '未知'
+  const d = new Date(iso)
+  const now = new Date()
+  const diff = now - d
+  if (diff < 60000) return '刚刚'
+  if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前'
+  if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前'
+  return Math.floor(diff / 86400000) + '天前'
+}
+async function clearAll() {
+  if (!confirm('确定清除所有配置？此操作不可撤销。')) return
+  try {
+    await fetch(`${getApiBase()}/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accounts: [], keys: [], current: null, settings: { autoFallback: true, parallel: false, verbose: false } }),
+    })
+    location.reload()
+  } catch (e) {
+    alert('清除失败: ' + e.message)
+  }
+}
+
+
+// ─── Admin Panel ───
+let adminUsers = []
+
+async function loadAdmin() {
+  if (!current?.id) return
+  // 用存储的 token 检查是否为管理员
+  const resp = await fetch(getApiBase() + '/api/auth/me', {
+    headers: { Authorization: 'Bearer ' + current.token },
+  })
+  if (!resp.ok) return
+  const user = await resp.json()
+  if (!user.isAdmin) return
+  document.getElementById('adminTabBtn').style.display = ''
+  adminUsers = [] // 清空旧数据，reloadAdmin 时会重新拉取
+  renderAdminUsers()
+}
+
+async function renderAdminUsers() {
+  if (!current?.token) return
+  const resp = await fetch(getApiBase() + '/api/admin/users', {
+    headers: { Authorization: 'Bearer ' + current.token },
+  })
+  if (!resp.ok) return
+  const data = await resp.json()
+  adminUsers = data.users || []
+  const list = document.getElementById('adminUserList')
+  if (!adminUsers.length) {
+    list.innerHTML = '<div class="empty"><div class="icon">👤</div><div>暂无注册用户</div></div>'
+    return
+  }
+  list.innerHTML = adminUsers.map(u => {
+    const planClass = u.subscription?.plan === 'pro' ? 'plan-pro' : u.subscription?.plan === 'family' ? 'plan-family' : 'plan-free'
+    const planLabel = u.subscription?.plan === 'pro' ? 'Pro' : u.subscription?.plan === 'family' ? 'Family' : '免费版'
+    const expiresStr = u.subscription?.expiresAt ? formatDate(u.subscription.expiresAt) : '永久'
+    const today = new Date().toISOString().slice(0, 10)
+    return `
+    <div class="admin-user-card">
+      <div class="avatar">${(u.username || '?')[0].toUpperCase()}</div>
+      <div class="admin-user-info">
+        <div class="admin-user-name">${esc(u.displayName || u.username)}</div>
+        <div class="admin-user-email">${esc(u.email || '')}</div>
+        <span class="plan-badge ${planClass}">${planLabel}</span>
+        <div class="subscription-detail">
+          到期时间：<span>${expiresStr}</span> · 孩子数：<span>${u.subscription?.childrenCount || 1}</span>
+        </div>
+        <div class="subscription-detail">
+          注册：<span>${formatDate(u.createdAt)}</span>
+        </div>
+      </div>
+      <div class="admin-user-actions">
+        <button class="btn btn-primary btn-sm" onclick="openEditSub('${u.id}')">📦 套餐</button>
+        <button class="btn btn-ghost btn-sm" onclick="resetDaily('${u.id}', this)">🔄 重置额度</button>
+        <button class="btn btn-sm" style="background:#FEF2F2;color:#DC2626;border:1.5px solid #FECACA" onclick="deleteUser('${u.id}','${esc(u.displayName||u.username)}')">🗑️ 删除</button>
+      </div>
+    </div>`
+  }).join('')
+}
+
+function openEditSub(userId) {
+  const u = adminUsers.find(x => x.id === userId)
+  if (!u) return
+  document.getElementById('editSubUserId').value = userId
+  document.getElementById('editSubUsername').textContent = esc(u.displayName || u.username)
+  document.getElementById('editSubPlan').value = u.subscription?.plan || 'free'
+  document.getElementById('editSubExpiresAt').value = u.subscription?.expiresAt
+    ? u.subscription.expiresAt.slice(0, 10)
+    : ''
+  document.getElementById('editSubChildrenCount').value = u.subscription?.childrenCount || 1
+  // 根据套餐显示/隐藏孩子数字段
+  document.getElementById('childrenCountField').style.display = (document.getElementById('editSubPlan').value === 'family') ? 'block' : 'none'
+  document.getElementById('editSubModal').classList.add('show')
+}
+
+async function submitEditSub() {
+  const userId = document.getElementById('editSubUserId').value
+  const plan = document.getElementById('editSubPlan').value
+  const expiresAt = document.getElementById('editSubExpiresAt').value
+  const childrenCount = parseInt(document.getElementById('editSubChildrenCount').value) || 1
+  const statusEl = document.getElementById('editSubStatus')
+  statusEl.textContent = '保存中...'
+  statusEl.className = 'status show info'
+  try {
+    const resp = await fetch(getApiBase() + '/api/admin/users/' + userId + '/subscription', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + current.token },
+      body: JSON.stringify({ plan, expiresAt, childrenCount }),
+    })
+    const data = await resp.json()
+    if (!resp.ok) throw new Error(data.error || '保存失败')
+    closeModal('editSubModal')
+    renderAdminUsers()
+    statusEl.textContent = '✅ 套餐已更新'
+    statusEl.className = 'status show success'
+    setTimeout(() => statusEl.classList.remove('show'), 3000)
+  } catch (e) {
+    statusEl.textContent = '❌ ' + e.message
+    statusEl.className = 'status show error'
+  }
+}
+
+async function resetDaily(userId, btn) {
+  if (btn.disabled) return
+  btn.disabled = true
+  btn.textContent = '重置中...'
+  try {
+    const resp = await fetch(getApiBase() + '/api/admin/users/' + userId + '/reset-daily', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + current.token },
+    })
+    const data = await resp.json()
+    if (!resp.ok) throw new Error(data.error || '重置失败')
+    btn.textContent = '✅ 已重置'
+    setTimeout(() => { btn.disabled = false; btn.textContent = '🔄 重置额度' }, 1500)
+  } catch (e) {
+    alert('❌ ' + e.message)
+    btn.disabled = false
+    btn.textContent = '🔄 重置额度'
+  }
+}
+
+async function deleteUser(userId, username) {
+  if (!confirm(`确定要删除用户「${username}」吗？\n\n此操作将同时删除该用户下的所有孩子档案及错题记录，不可撤销。`)) return
+  try {
+    const resp = await fetch(getApiBase() + '/api/admin/users/' + userId, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + current.token },
+    })
+    const data = await resp.json()
+    if (!resp.ok) throw new Error(data.error || '删除失败')
+    renderAdminUsers()
+  } catch (e) {
+    alert('❌ ' + e.message)
+  }
+}
+
+
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) overlay.classList.remove('show')
+  })
+})
+
+// 页面加载时从服务端拉取配置
+loadConfig()
+</script>
+</body>
+</html>

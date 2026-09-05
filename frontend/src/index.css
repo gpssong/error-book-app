@@ -91,6 +91,25 @@ body.is-webview #root {
     box-shadow: none;
     overflow: visible;
   }
+  /* KaTeX 内联公式在打印时不要额外 margin，防止选项与公式重叠 */
+  .katex { margin: 0 !important; line-height: 1.2 !important; }
+  .katex-display { margin: 0.5em 0 !important; }
+  /* 打印时题目文本容器不设 max-height，让内容自然撑开，避免选项覆盖下方 title */
+  .print-text-content {
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  /* 打印时错题卡和 A4 容器不再 overflow-hidden */
+  .print-break-inside-avoid {
+    overflow: visible !important;
+  }
+  /* 打印时标题不截断 */
+  .print-title-auto {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
   .no-print {
     display: none !important;
   }
