@@ -52,19 +52,9 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
     }
   }, [err?.id])
 
-  if (!err) {
-    return (
-      <div className="flex flex-col h-full bg-[#F8FAFC] items-center justify-center">
-        <p className="text-slate-400 font-bold">错题不存在</p>
-        <button onClick={() => onErrorId('errorList')} className="mt-4 text-[#2563EB] text-sm font-bold">
-          返回错题列表
-        </button>
-      </div>
-    )
-  }
-
-  // ─── AI 讲解逻辑 ────────────────────────────────────────────────────────────
+  // ─── AI 讲解逻辑(所有 hooks 必须放在早返回之前,保证 hook 顺序稳定) ────────
   const handleAnalyze = useCallback(async () => {
+    if (!err) return
     setAiLoading(true)
     try {
       const result = await api.analyzeError({
@@ -89,6 +79,7 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
   }, [err, updateError])
 
   const handleGenerateSimilar = useCallback(async () => {
+    if (!err) return
     setAiLoading(true)
     try {
       const res = await api.generateSimilar({
@@ -111,6 +102,17 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
       setAiLoading(false)
     }
   }, [err, aiResult, updateError])
+
+  if (!err) {
+    return (
+      <div className="flex flex-col h-full bg-[#F8FAFC] items-center justify-center">
+        <p className="text-slate-400 font-bold">错题不存在</p>
+        <button onClick={() => onErrorId('errorList')} className="mt-4 text-[#2563EB] text-sm font-bold">
+          返回错题列表
+        </button>
+      </div>
+    )
+  }
 
   const toggleFav = () => {
     const newFav = !err.isFavorite

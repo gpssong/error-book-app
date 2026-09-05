@@ -1,6 +1,19 @@
 # Changelog
 
-## v17 (2026-09-05) - 删除错题 React #300 修复
+## v18 (2026-09-05) - 删除错题 React #300 真正修复
+
+### 修复
+- **v17 修复未生效**:之前只把 `useState deleting` 上移,但 **`useCallback(handleAnalyze)` 和 `useCallback(handleGenerateSimilar)` 仍在 `if (!err) return` 之后**。
+- **触发链 v2**:用户从 `ErrorList` 进入 `ErrorDetail` 瞬间,`err` 因 `errors` 尚未加载可能是 `undefined` → 走 early return 分支(只跑 11 个 hooks);接着 `errors` 加载完,`err` 变 defined → 多跑 2 个 `useCallback` → React #300 "Rendered more hooks than during the previous render"
+- **v18 修复**:把 `handleAnalyze` / `handleGenerateSimilar` 两个 `useCallback` 上移到 `if (!err) return` 之前;callback 内部用 `if (!err) return` 守门。现在 hook 顺序在所有渲染中固定为 14 个(11×useState + 1×useEffect + 2×useCallback),无论 err 是否存在。
+
+### 部署
+- 重新构建前端 hash `index-BvLkYzWd.js`
+- APK: `error-book-v18-hook-fix.apk` (5.3MB)
+
+---
+
+## v17 (2026-09-05) - 删除错题 React #300 修复(未生效,见 v18)
 
 ### 修复
 - **`ErrorDetailScreen.tsx`** `useState(false)` for `deleting` 之前定义在 `if (!err) return` 之后。当删除错题后 `await refreshErrors()` 触发重新渲染,`err` 变 `undefined`,组件走 early return 分支,**hook 数量从 12 变成 11**(少了 `useState deleting`),触发 React #300 "Rendered more hooks than during the previous render"。
