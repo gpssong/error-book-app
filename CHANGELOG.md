@@ -1,5 +1,30 @@
 # Changelog
 
+## v37 (2026-09-06) - IPv4 fallback + DNS A 记录
+
+### 问题
+电脑/手机连 **Wi-Fi 无 IPv6 出口** 的网络时（如部分企业网、酒店 Wi-Fi、二级路由场景），域名 `error.93gushi.com` 只有 AAAA 记录（`240e:390:88f7:6cb1::697`），所有请求超时无法打开。
+
+### 修复
+- **APK 端**: `frontend/src/stores/api.ts` 新增 4 候选 base + 运行时探测 fallback
+  - 优先级：`http://error.93gushi.com:4040` → `http://220.187.13.231:4040` → `http://192.168.0.14:4040` → `http://192.168.0.14:3001`
+  - 启动时并行 ping `/api/ocr/status`，4 秒超时内谁先 200 谁锁定
+- **DNS 端**: 阿里云 DNS `error.93gushi.com`（属于 `93gushi.com`）新增 A 记录 → `220.187.13.231`
+
+### 修改
+- `frontend/src/stores/api.ts`: 替换同步 `BASE_URL` 常量为可变的 `_activeBase`，新增 `API_BASE_CANDIDATES` + `startBaseProbe()` + `resolveStaticBase()` + 导出 `getApiBase()`
+- 阿里云 DNS: RecordId `2096397542803602432`
+
+### 部署
+- 前端: `index-CLN3KWUk.js` ✅ HTTP 200
+- APK: `apk/error-book-v37-ipv4-fallback.apk` (8.4MB)
+
+### 备注
+- 公网 IPv4 `220.187.13.231` 依赖运营商分配，若重启光猫会变——重跑 `curl -4 ifconfig.me` 拿新值，再用 `aliyun alidns update-domain-record --record-id 2096397542803602432 --value <新IP>` 更新
+- 当前 IPv6 仍可用，电脑双栈/手机 4G 仍走原 AAAA 路径
+
+---
+
 ## v35 (2026-09-05) - 选择题打印时选项与题目重叠修复
 
 ### 修复

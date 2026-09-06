@@ -7,28 +7,75 @@
  */
 import { auth, emitAuthRequired } from './auth'
 
-function getApiBase(): string {
-  // 优先使用环境变量
+// v37: API base 多候选,运行时探测可达性 + fallback
+// 优先级: 外网 IPv6 域名(IPv6 网络) → 外网 IPv4 域名(A记录) → 内网 IP(同 Wi-Fi) → 内网直连后端
+const API_BASE_CANDIDATES = [
+  'http://error.93gushi.com:4040',      // 外网域名（IPv6 / A 记录）
+  'http://220.187.13.231:4040',         // 公网 IPv4 直连
+  'http://192.168.0.14:4040',           // 局域网 nginx 反代
+  'http://192.168.0.14:3001',           // 局域网直连后端（无 nginx 兜底）
+]
+
+// 解析最终 base：环境变量 / 同源 / 协议嗅探
+function resolveStaticBase(): string {
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
-  // 如果是 Capacitor WebView（file:// 或 capacitor:// 协议）
   const protocol = window.location.protocol
+  // Capacitor WebView 内走外网（手机 4G/外网 Wi-Fi 都能通）
   if (protocol === 'file:' || protocol === 'capacitor:') {
-    // 容器内直连外网域名（手机 4G 也能访问）
-    return 'http://error.93gushi.com:4040'
+    return API_BASE_CANDIDATES[0]
   }
-  // 如果在服务器上通过 nginx 访问
   const host = window.location.hostname
+  // 浏览器内已挂在 4040 端口 → 走同源,免一次跨域
   if (host === 'error.93gushi.com') return `http://${host}:4040`
-  // 默认内网地址（开发调试）
-  return 'http://192.168.0.14:3001'
+  if (host === '220.187.13.231') return `http://${host}:4040`
+  // 本地开发 / 其他
+  return API_BASE_CANDIDATES[1] // 调试时优先用公网 IP
 }
-const BASE_URL = getApiBase()
-console.log(`[API] BASE_URL=${BASE_URL}`)
+
+// 当前生效的 base,异步探测后会替换
+let _activeBase = resolveStaticBase()
+console.log(`[API] initial BASE_URL=${_activeBase}`)
+
+// v37: 后台探测,5s 内任一候选可达则锁定
+let _probeStarted = false
+function startBaseProbe() {
+  if (_probeStarted) return
+  _probeStarted = true
+
+  // 跳过当前已在用的那个(避免重复请求)
+  const candidates = API_BASE_CANDIDATES.filter((c) => c !== _activeBase)
+
+  // 并行探测,谁先 200 谁先赢
+  Promise.any(
+    candidates.map(
+      (base) =>
+        new Promise<string>((resolve, reject) => {
+          const ctrl = new AbortController()
+          const t = setTimeout(() => { ctrl.abort(); reject(new Error('timeout')) }, 4000)
+          fetch(`${base}/api/ocr/status`, { signal: ctrl.signal })
+            .then((r) => (r.ok ? resolve(base) : reject(new Error(`${base}=${r.status}`))))
+            .catch((e) => reject(e))
+            .finally(() => clearTimeout(t))
+        }),
+    ),
+  )
+    .then((winner) => {
+      if (winner !== _activeBase) {
+        console.log(`[API] fallback ${_activeBase} → ${winner}`)
+        _activeBase = winner
+      }
+    })
+    .catch(() => {
+      console.warn(`[API] 所有候选都不可达,保持 ${_activeBase}`)
+    })
+}
+export function getApiBase(): string { return _activeBase }
 
 // ─── 全局配置缓存（来自 /api/config，替代 localStorage eb_keys）────────────────
 let _configCache: { keys: Array<{ category: string; provider: string; current: boolean; enabled: boolean; appId?: string; secretCode?: string }> } | null = null
-// 启动时预取，保证 OCR 请求发出前数据就绪
-fetch(`${BASE_URL}/api/config`)
+// v37: 启动时探测可达 base + 预取 config（探测完成后才发 config 请求）
+startBaseProbe()
+fetch(`${_activeBase}/api/config`)
   .then(r => r.json())
   .then((d: any) => { _configCache = d })
   .catch(() => {})
@@ -127,7 +174,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = auth.getToken()
   if (token) headers['Authorization'] = `Bearer ${token}`
 
-  const res = await fetch(`${BASE_URL}/api${path}`, { ...options, headers })
+  const res = await fetch(`${_activeBase}/api${path}`, { ...options, headers })
 
   // 401 → token 失效或未登录，跳登录页
   if (res.status === 401) {
@@ -221,7 +268,7 @@ const api = {
   // 注意：register/login 不走统一的 request()（不带 token，且 200 而非 401 处理）
   auth: {
     async register(data: { username: string; email: string; password: string; displayName?: string }) {
-      const res = await fetch(`${BASE_URL}/api/auth/register`, {
+      const res = await fetch(`${_activeBase}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -231,7 +278,7 @@ const api = {
       return body as { token: string; user: { id: string; username: string; email: string; displayName: string; isAdmin?: boolean } }
     },
     async login(data: { account: string; password: string }) {
-      const res = await fetch(`${BASE_URL}/api/auth/login`, {
+      const res = await fetch(`${_activeBase}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -242,14 +289,14 @@ const api = {
     },
     async me() {
       const token = auth.getToken()
-      const res = await fetch(`${BASE_URL}/api/auth/me`, {
+      const res = await fetch(`${_activeBase}/api/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error('未登录')
       return res.json() as Promise<{ id: string; username: string; email: string; displayName: string; isAdmin?: boolean }>
     },
     async updateMe(data: { displayName?: string; oldPassword?: string; newPassword?: string }) {
-      const res = await fetch(`${BASE_URL}/api/auth/me`, {
+      const res = await fetch(`${_activeBase}/api/auth/me`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...(auth.getToken() ? { Authorization: `Bearer ${auth.getToken()}` } : {}) },
         body: JSON.stringify(data),

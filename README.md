@@ -1,9 +1,11 @@
-# 错题本 App (v14)
+# 错题本 App (v37)
 
 多子女错题本应用，支持 **拍照识题 + AI讲解 + 手写批注 + 错题管理 + 多用户账号隔离**。
 
-**最新版本**: `error-book-print-answer-fix.apk`
+**最新版本**: `error-book-v37-ipv4-fallback.apk`
 **线上地址**: http://error.93gushi.com:4040
+**IPv4 直连**: http://220.187.13.231:4040（Wi-Fi 无 v6 时兜底）
+**内网直连**: http://192.168.0.14:4040
 
 ## 技术栈
 
@@ -221,6 +223,7 @@ client_max_body_size 20m;  # OCR base64 大图必须放大
 
 | 版本 | 日期 | 主要变化 |
 |---|---|---|
+| **v37** | 2026-09-06 | Wi-Fi 无 v6 兜底:API base 4 候选探测 fallback + 域名新增 A 记录 `220.187.13.231` |
 | **v36** | 2026-09-05 | 打印参考答案改用AI讲解答案:`aiAnalysis` 增加 `answer` 字段,`getAnswer()` 优先用 AI 讲解最终答案 |
 | **v35** | 2026-09-05 | 选择题打印时选项与题目重叠修复:`print:overflow-visible` + `print:max-h-none` 解决 KaTeX 公式截断溢出 |
 | **v32** | 2026-09-05 | AI练习页面底部tab修复:`showNav`不再排除`aiPractice`,进入AI同步练习页底部导航正常显示 |
