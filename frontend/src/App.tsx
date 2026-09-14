@@ -58,6 +58,16 @@ function AppContent() {
   const [loggedIn, setLoggedIn] = useState(checkLoggedIn)
   const [authScreen, setAuthScreen] = useState<AuthScreen>('login')
 
+  // v38: 启动时从 Capacitor native (SharedPreferences) 回填 token
+  // 系统回收 WebView localStorage 后,localStorage 里 token 丢了但 native 还在,
+  // 回填后避免"每次退出 App 都要重登"。
+  useEffect(() => {
+    if (auth.isLoggedIn()) return // 已有 token,无需回填
+    void auth.restoreFromNative().then((restored) => {
+      if (restored) setLoggedIn(true)
+    })
+  }, [])
+
   // 监听 401 事件，自动跳登录页
   useEffect(() => {
     const handler = () => {

@@ -1,5 +1,68 @@
 # Changelog
 
+## v38.1 (2026-09-14) - 登录态持久化 + APK 插件链接修复 + 飞牛 nginx 挂载加固
+
+### 修复
+
+#### 1. 登录态持久化(SharedPreferences 双写 + 启动回填)
+
+App 杀进程后**仍要求重新登录**的根因是 WebView localStorage 被 Android 系统回收。修复:
+
+- **前端 `frontend/src/stores/auth.ts`**:
+  - 新增 native 侧常量 `NATIVE_TOKEN_KEY = 'native_token'` / `NATIVE_USER_KEY = 'native_user'`
+  - `hasPreferences = Capacitor.isNativePlatform()`(`@capacitor/core` v8 没有 `isPluginAvailable` 导出,用 `isNativePlatform` 兜底)
+  - `setSession()` 双写 localStorage + `Preferences.set()`
+  - 新增 `restoreFromNative()`:启动时若 localStorage 没 token 但 native 还在,从 native 回填
+- **前端 `frontend/src/App.tsx`**:挂载 effect 调 `restoreFromNative()`,回填成功 `setLoggedIn(true)`
+- **依赖**: `frontend/package.json` + `android-app/package.json` 加 `@capacitor/preferences@6.0.4`
+
+#### 2. APK 漏装 Preferences 插件(2 个隐藏坑)
+
+新装 v38 包后**仍然要重登** —— 代码写了但 APK 里**根本搜不到 PreferencesPlugin 类**。挖出来 2 个互不相关的根因:
+
+**坑 A**: `dimer47-capacitor-plugin-printer` (Kotlin) 插件硬编码 `JvmTarget.JVM_21`,跟项目里 `JavaVersion.VERSION_17` 冲突,Gradle 直接 build failed / 报"Inconsistent JVM Target Compatibility"。
+- **修复**: sed 改 `node_modules/.../dimer47/capacitor-plugin-printer/android/build.gradle` 第 50 行 `JvmTarget.JVM_21` → `JvmTarget.JVM_17`(pnpm 源文件改一次,cap sync 不重写)
+
+**坑 B**: AGP 8.13.0 + Capacitor 6 plugin 兼容性 bug —— `:capacitor-preferences` 模块的 aar **没被自动识别为外部依赖**,`:app:dexBuilderDebug` 的 input list 里只有 R.jar + app 自己的 javac 输出,插件类全丢。
+- **修复**: 部署脚本里加 `:capacitor-preferences:assembleDebug` **单独先跑**(强制触发 `bundleDebugAar`),然后 `./gradlew --stop` + 删 `.gradle` + `app/build` 后再 `:app:assembleDebug`(防 incremental cache 短路)
+- **验证**: `apkanalyzer dex packages app-debug.apk | grep PreferencesPlugin` 3 个 classes 命中
+
+#### 3. 飞牛 nginx 挂载偶发失效
+
+线上 `http://error.93gushi.com:4040/` 出现 `403 Forbidden nginx/1.31.5`,容器内 `ls /usr/share/nginx/html/` **total 0**,但宿主机 `/vol1/1000/docker/error-book/frontend/` 正常。根因:飞牛 OS `vol1/1000/` 路径上容器启动时挂载有 race condition,容器跑久了挂载点丢失。
+- **修复**: `docker restart error-book-nginx` 即恢复(已做)
+- **加固 A** — `docker-compose.yml` nginx 服务加 healthcheck: 每 30s `test -s /usr/share/nginx/html/index.html`,失败 3 次自动重启容器
+- **加固 B** — README 部署命令末尾加 `docker exec error-book-nginx nginx -s reload`,让新前端 cp 完主动让 nginx 重新扫盘
+
+### 修改 / 新增文件
+
+| 文件 | 改动 |
+|---|---|
+| `frontend/src/stores/auth.ts` | 双写 native + restoreFromNative |
+| `frontend/src/App.tsx` | 启动 effect 调 restoreFromNative |
+| `frontend/package.json` + `frontend/pnpm-lock.yaml` | `@capacitor/preferences@6.0.4` |
+| `android-app/package.json` + `android-app/pnpm-lock.yaml` | `@capacitor/preferences@6.0.4` |
+| `docker-compose.yml` | **新增** - nginx 加 healthcheck |
+| `README.md` | 部署命令末尾加 nginx reload + 修正路径 `/volume1/` → `/vol1/1000/` |
+
+### 部署
+
+- **APK**: `apk/error-book-v38-login-persist.apk` (5.85 MB,含 PreferencesPlugin)
+- **NAS**: docker-compose 已 up -d 应用 healthcheck,nginx `Status: healthy`
+- **线上**: `http://error.93gushi.com:4040` HTTP 200
+
+### 装机验证步骤
+
+1. **卸载旧版**(避免 SharedPreferences 残留干扰)
+2. 装 `error-book-v38-login-persist.apk`
+3. 登录一次
+4. 最近任务键**上划杀掉 App**
+5. 重新打开 → 应该**直接进首页**
+
+如果还回登录页,打开 Chrome DevTools(APK 装了 webContentsDebuggingEnabled,Chrome 远程调试)看 console `[auth] token 从 native 回填成功` 日志有没有打印。
+
+---
+
 ## v38 (2026-09-14) - 语文题 sourceText + 学科 LLM 分类 + 飞牛 NAS 迁移
 
 ### 新增

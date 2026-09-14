@@ -1,0 +1,57 @@
+version: "3.8"
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: error-book-mongo
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - ./mongo-data:/data/db
+      - ./mongo-log:/var/log/mongodb
+    command: ["mongod", "--bind_ip_all"]
+    networks:
+      - error-book-net
+
+  backend:
+    build: ./backend
+    image: error-book-backend:latest
+    container_name: error-book-backend
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      HOST: 0.0.0.0
+      MONGODB_URI: mongodb://mongo:27017/error_book
+    networks:
+      - error-book-net
+
+  nginx:
+    image: nginx:alpine
+    container_name: error-book-nginx
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "4040:4040"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./frontend:/usr/share/nginx/html:ro
+    networks:
+      - error-book-net
+    # v38 加固:飞牛 OS vol1/1000/ 路径上容器启动偶发挂载失效(目录 total 0),
+    # curl /index.html 返回 500/403 而非 200。周期探测 index.html 可读性,
+    # 失败时 docker 自动重启容器(最多 3 次避免重启循环)。
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /usr/share/nginx/html/index.html || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+networks:
+  error-book-net:
+    driver: bridge

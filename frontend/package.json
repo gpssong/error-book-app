@@ -12,6 +12,7 @@
   "dependencies": {
     "@capacitor/app": "^6.0.3",
     "@capacitor/core": "^8.5.1",
+    "@capacitor/preferences": "^6.0.4",
     "@dimer47/capacitor-plugin-printer": "^2.0.4",
     "katex": "0.16.11",
     "react": "^19.0.0",

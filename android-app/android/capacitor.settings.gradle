@@ -5,5 +5,8 @@ project(':capacitor-android').projectDir = new File('../node_modules/.pnpm/@capa
 include ':capacitor-app'
 project(':capacitor-app').projectDir = new File('../node_modules/.pnpm/@capacitor+app@6.0.3_@capacitor+core@8.5.1/node_modules/@capacitor/app/android')
 
+include ':capacitor-preferences'
+project(':capacitor-preferences').projectDir = new File('../node_modules/.pnpm/@capacitor+preferences@6.0.4_@capacitor+core@8.5.1/node_modules/@capacitor/preferences/android')
+
 include ':dimer47-capacitor-plugin-printer'
 project(':dimer47-capacitor-plugin-printer').projectDir = new File('../node_modules/.pnpm/@dimer47+capacitor-plugin-printer@2.0.4_@capacitor+core@8.5.1/node_modules/@dimer47/capacitor-plugin-printer/android')

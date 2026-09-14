@@ -1,8 +1,8 @@
-# 错题本 App (v38)
+# 错题本 App (v38.1)
 
-多子女错题本应用，支持 **拍照识题 + AI讲解 + 手写批注 + 错题管理 + 多用户账号隔离 + 语文原文提取 + 学科 LLM 自动分类**。
+多子女错题本应用，支持 **拍照识题 + AI讲解 + 手写批注 + 错题管理 + 多用户账号隔离 + 语文原文提取 + 学科 LLM 自动分类 + 登录态持久化**。
 
-**最新版本**: `error-book-v38-subject-llm.apk`
+**最新版本**: `error-book-v38-login-persist.apk`
 **线上地址**: http://error.93gushi.com:4040
 **内网直连**: http://192.168.0.32:4040(飞牛 NAS 局域网)
 
@@ -232,8 +232,12 @@ cd frontend && pnpm build && cd ..
 sshpass -p '850225sonG' scp -r frontend/dist/ gpssong@192.168.0.32:/tmp/eb-dist/
 sshpass -p '850225sonG' ssh gpssong@192.168.0.32 \
   'echo "850225sonG" | sudo -S -p "" bash -c "\
-     rm -rf /volume1/docker/error-book/nginx/html/* && \
-     cp -r /tmp/eb-dist/* /volume1/docker/error-book/nginx/html/"'
+     rm -rf /vol1/1000/docker/error-book/frontend/* && \
+     cp -r /tmp/eb-dist/* /vol1/1000/docker/error-book/frontend/ && \
+     docker exec error-book-nginx nginx -s reload"'
+# v38 加固:最后加 nginx -s reload,让 nginx 重新打开 index.html / assets
+# 否则偶发"挂载看似 OK 但 ls /usr/share/nginx/html/ total 0"的脏状态,
+# 必须 docker restart error-book-nginx 才能恢复。
 
 # 4. 健康检查(走 v6)
 curl -6 -s 'http://[240e:390:88f6:c681::3f3]:4040/api/ocr/status'
@@ -259,6 +263,7 @@ client_max_body_size 20m;  # OCR base64 大图必须放大
 
 | 版本 | 日期 | 主要变化 |
 |---|---|---|
+| **v38.1** | 2026-09-14 | 登录态持久化(SharedPreferences 双写+启动回填);APK Preferences 插件链接修复(Kotlin JVM 21→17 + 强制 aar 产出);飞牛 nginx 挂载加固(healthcheck + 部署后 nginx -s reload) |
 | **v38** | 2026-09-14 | 语文题 sourceText(诗词/文言文/阅读原文提取+展示+AI 引用)；学科 LLM 自动分类 v2(9 学科,按知识点判)；JWT 30 天；迁移到飞牛 NAS(Docker Compose) |
 | **v37** | 2026-09-06 | Wi-Fi 无 v6 兜底:API base 4 候选探测 fallback + 域名新增 A 记录 `220.187.13.231` |
 | **v36** | 2026-09-05 | 打印参考答案改用AI讲解答案:`aiAnalysis` 增加 `answer` 字段,`getAnswer()` 优先用 AI 讲解最终答案 |
@@ -325,6 +330,9 @@ curl -6 -s 'http://[240e:390:88f6:c681::3f3]:4040/api/ocr/status'
 - IPv6 是动态租约（~7天），DNS AAAA 可能过期 —— 重启路由器或手动更新
 - happy-eyeballs 优先 v4 → 飞牛无 v4 出口,手机/电脑必须走 v6,curl 必须加 `-6` 才能测 IPv6-only 域名
 - 后端在 FNOS/Docker 容器里时，`/tmp/` 目录可能没权限，先 `sudo mkdir -p /tmp && sudo chmod 1777 /tmp`
+- **AGP 8.13 + Capacitor 6 plugin 漏装**: 新装 `@capacitor/X` 后,APK 里可能搜不到 X 的 plugin 类,需手动 `./gradlew :capacitor-X:assembleDebug` 单独跑一遍触发 aar 产出,再删 `.gradle` 和 `app/build` 后重 build app
+- **`dimer47-capacitor-plugin-printer` Kotlin JVM 21 冲突**: 插件自带 build.gradle 写死 `JvmTarget.JVM_21`,直接 sed 改 `node_modules/.../android/build.gradle` 的 `JvmTarget.JVM_21` → `JvmTarget.JVM_17`(pnpm 源,cap sync 不重写)
+- **飞牛 nginx 挂载偶发失效**: 容器内 `ls /usr/share/nginx/html` 偶发 total 0,根因是挂载 race condition。docker-compose 已加 healthcheck 自动重启,部署脚本也加了 `nginx -s reload`
 
 ## License
 
