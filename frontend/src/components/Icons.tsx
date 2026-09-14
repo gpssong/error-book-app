@@ -11,6 +11,14 @@ export const subjectColors: Record<Subject, { bg: string; text: string }> = {
   物理: { bg: '#FDF4FF', text: '#9333EA' },
   化学: { bg: '#FFF1F2', text: '#E11D48' },
   生物: { bg: '#ECFDF5', text: '#059669' },
+  历史: { bg: '#FEF3C7', text: '#B45309' },
+  地理: { bg: '#ECFEFF', text: '#0891B2' },
+  科学: { bg: '#F5F3FF', text: '#7C3AED' },
+}
+
+// 兼容历史数据:旧 SubjectTag 收到的 subject 可能是 6 大主科之外的值,用 fallback
+export function subjectColorSafe(subject: string): { bg: string; text: string } {
+  return subjectColors[subject as Subject] || subjectColors.语文
 }
 
 // ─── 图标组件集合 ─────────────────────────────────────────────────────────────
@@ -188,7 +196,7 @@ export const Icon = {
 
 // ─── 小组件 ────────────────────────────────────────────────────────────────────
 export const SubjectTag = ({ subject }: { subject: Subject }) => {
-  const c = subjectColors[subject]
+  const c = subjectColorSafe(subject)
   return (
     <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: c.bg, color: c.text }}>
       {subject}

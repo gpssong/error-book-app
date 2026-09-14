@@ -172,7 +172,7 @@ router.use(authMiddleware)
 
 router.post('/analyze', checkDailyLimit({ action: 'ai_analyze' }), async (req, res) => {
   try {
-    const { title, knowledgePoint, subject, textContent, childId } = req.body
+    const { title, knowledgePoint, subject, textContent, sourceText, childId } = req.body
 
     // 反查 child grade (用于讲解更贴近学段)
     let childGrade = null
@@ -189,7 +189,7 @@ router.post('/analyze', checkDailyLimit({ action: 'ai_analyze' }), async (req, r
 题目：${title}
 知识点：${knowledgePoint}
 题目内容：${textContent || '（见图片）'}
-
+${sourceText ? `\n诗词原文/阅读文章原文：\n${sourceText}\n` : ''}
 ${gradePrompt}
 
 请按以下JSON格式返回分析结果（不要有其他文字）：
@@ -225,7 +225,7 @@ ${gradePrompt}
 // ─── 生成同类练习题 ────────────────────────────────────────────────────────────
 router.post('/similar', checkDailyLimit({ action: 'ai_similar' }), async (req, res) => {
   try {
-    const { title, knowledgePoint, subject, difficulty = '中等', childId } = req.body
+    const { title, knowledgePoint, subject, difficulty = '中等', textContent, sourceText, childId } = req.body
 
     // 若传了 childId 且当前有用户登录,反查 child 拿到 grade 注入 prompt
     let childGrade = null
@@ -240,6 +240,11 @@ router.post('/similar', checkDailyLimit({ action: 'ai_similar' }), async (req, r
     const prompt = `请严格生成【恰好 ${SIMILAR_COUNT} 道】（不多不少，缺一不可）关于"${knowledgePoint}"知识点的${subject}变式练习题。
 
 ${gradePrompt}
+
+参考原题:
+- 题目标题:${title}
+- 题目内容:${textContent || '(无)'}
+${sourceText ? `- 诗词/阅读原文:\n${sourceText}\n` : ''}
 
 硬性要求：
 - 题目数量必须 = ${SIMILAR_COUNT},少 1 道即视为输出失败

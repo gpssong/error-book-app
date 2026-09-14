@@ -93,7 +93,7 @@ export interface Child {
   createdAt: string
 }
 
-export type Subject = '数学' | '语文' | '英语' | '物理' | '化学' | '生物'
+export type Subject = '数学' | '语文' | '英语' | '物理' | '化学' | '生物' | '历史' | '地理' | '科学'
 
 export interface SimilarQuestion {
   id: string
@@ -112,6 +112,7 @@ export interface ErrorItem {
   imageUrl: string
   imageBase64?: string
   textContent?: string
+  sourceText?: string          // 语文题:诗词原文/文言文/阅读文章(2026-09-14 加)
   handwritingSvg?: string
   isFavorite: boolean
   wrongCount: number
@@ -225,9 +226,9 @@ const api = {
     request<ErrorItem>(`/errors/${id}/ai-analysis`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   // ─── AI 服务 ────────────────────────────────────────────────────────────────
-  analyzeError: (data: { title: string; knowledgePoint: string; subject: string; textContent?: string; childId?: string }) =>
+  analyzeError: (data: { title: string; knowledgePoint: string; subject: string; textContent?: string; sourceText?: string; childId?: string }) =>
     request<AIAnalysisResult>('/ai/analyze', { method: 'POST', body: JSON.stringify(data) }),
-  generateSimilar: (data: { title: string; knowledgePoint: string; subject: string; difficulty?: string; childId?: string }) =>
+  generateSimilar: (data: { title: string; knowledgePoint: string; subject: string; difficulty?: string; textContent?: string; sourceText?: string; childId?: string }) =>
     request<{ questions: SimilarQuestion[] }>('/ai/similar', { method: 'POST', body: JSON.stringify(data) }),
   generateRandom: (data: { subject: string; grade?: string; childId?: string }) =>
     request<{ questions: SimilarQuestion[] }>('/ai/random', { method: 'POST', body: JSON.stringify(data) }),
@@ -247,7 +248,14 @@ const api = {
         extraHeaders['X-TextIn-Secret-Code'] = textin.secretCode
       }
     } catch { /* 忽略 */ }
-    return request<{ title: string; knowledgePoint: string; textContent: string }>('/ocr', {
+    return request<{
+      title: string
+      knowledgePoint: string
+      textContent: string
+      sourceText?: string         // 语文题:诗词原文/文言文/阅读文章
+      subject?: string
+      detectedSubject?: string
+    }>('/ocr', {
       method: 'POST',
       headers: extraHeaders,
       body: JSON.stringify(data),

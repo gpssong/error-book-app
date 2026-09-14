@@ -4,7 +4,7 @@
  *
  * 字段说明：
  * - childId: 归属的孩子 ID（核心隔离字段）
- * - subject: 科目（数学/语文/英语/物理/化学/生物）
+ * - subject: 科目（数学/语文/英语/物理/化学/生物/历史/地理/科学）
  * - title: 题目简略标题
  * - knowledgePoint: 知识点标签
  * - imageUrl: 题目图片 URL（本地或云端）
@@ -26,13 +26,16 @@ export const errorQuestionSchema = new mongoose.Schema(
     subject: {
       type: String,
       required: true,
-      enum: ['数学', '语文', '英语', '物理', '化学', '生物'],
+      // 9 学科:6 大主科 + 历史/地理/科学(LLM 学科分类 2026-09-14 起会输出后 3 类)
+      enum: ['数学', '语文', '英语', '物理', '化学', '生物', '历史', '地理', '科学'],
     },
     title: { type: String, required: true, trim: true },
     knowledgePoint: { type: String, required: true, trim: true },
     imageUrl: { type: String, default: '' },
     imageBase64: { type: String, default: '' },
     textContent: { type: String, default: '' },
+    // 语文题:诗词原文/文言文/阅读文章(2026-09-14)
+    sourceText: { type: String, default: '' },
     handwritingSvg: { type: String, default: '' },
     wrongCount: { type: Number, default: 1 },
     isFavorite: { type: Boolean, default: false },
@@ -74,6 +77,7 @@ export function createMemoryError(payload, childId) {
     imageUrl: payload.imageUrl || '',
     imageBase64: payload.imageBase64 || '',
     textContent: payload.textContent || '',
+    sourceText: payload.sourceText || '',     // 语文题诗词原文
     handwritingSvg: payload.handwritingSvg || '',
     wrongCount: payload.wrongCount || 1,
     isFavorite: false,

@@ -11,7 +11,7 @@
 import jwt from 'jsonwebtoken'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'error-book-dev-secret-change-me'
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d'
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '30d'
 /** 全局管理员用户名（硬编码，仅 gpssong） */
 export const ADMIN_USERNAME = 'gpssong'
 

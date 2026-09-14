@@ -63,6 +63,32 @@ textContent 格式:
 - 公式/符号必须用 LaTeX,中文/数字/字母保持原文
 - 不要输出题目之外的任何解释
 
+**重要:诗词/阅读/文言文题要包含原文**
+语文题(古诗词、文言文、现代文阅读)中,题目常常引用或要求考生读懂一首诗/一段文言文/一篇文章。
+题目截图里通常会出现原文,但 OCR 输出可能被截断或考生只截了题目部分。
+为了孩子讲题时能看到完整原文,**必须**:
+- 认真看 OCR 文字 + 看图,**把题目所引用的诗词原文/文言文全文/阅读文章原文全部抓回**
+- 原诗词要保留标点、换行(用 \\n)、原文中的专有名词(朝代、作者、地名等)
+- 原诗词在 sourceText 里输出,**不要再混入 textContent**(textContent 只放题干 + 选项)
+- 题目字数限制放宽:诗词 100-500 字 / 文言文 200-800 字 / 阅读文章 300-2000 字
+- 如果题图里**确实没有**原文(只有题干和选项),sourceText 留空字符串 ""(不要瞎写)
+
+sourceText 示例:
+"《苏幕遮·怀旧》[北宋·范仲淹]\\n
+碧云天,黄叶地,秋色连波,波上寒烟翠。\\n
+山映斜阳天接水,芳草无情,更在斜阳外。\\n
+黯乡魂,追旅思,夜夜除非,好梦留人睡。\\n
+明月楼高休独倚,酒入愁肠,化作相思泪。\\n\\n
+《沁园春·长沙》[近代·毛泽东]\\n
+独立寒秋,湘江北去,橘子洲头。\\n
+看万山红遍,层林尽染;漫江碧透,百舸争流。\\n
+鹰击长空,鱼翔浅底,万类霜天竞自由。\\n
+怅寥廓,问苍茫大地,谁主沉浮?\\n
+携来百侣曾游,忆往昔峥嵘岁月稠。\\n
+恰同学少年,风华正茂;书生意气,挥斥方遒。\\n
+指点江山,激扬文字,粪土当年万户侯。\\n
+曾记否,到中流击水,浪遏飞舟?"
+
 textContent 示例:
 "1.已知集合 A = \\{x | x^2 - 2x - 3 \\geq 0\\},B = \\{x | \\ln x \\geq \\dfrac{1}{2}\\},则 A\\cup B = ( )
 A. [3,+\\infty)
@@ -80,7 +106,8 @@ D. [-1,\\sqrt{e}]"
 {
   "title": "...",
   "knowledgePoint": "...",
-  "textContent": "..."
+  "textContent": "...",
+  "sourceText": "..."   // 诗词原文/文言文/阅读文章(只语文类有值,其它学科留空字符串)
 }`
 
 /**
@@ -360,5 +387,112 @@ function normalizeParsed(p) {
     title: normalizeLatexLight(p.title || '') || '未识别',
     knowledgePoint: String(p.knowledgePoint || '').slice(0, 30) || '未知',
     textContent: normalizeLatex(p.textContent || '').trim(),
+    sourceText: String(p.sourceText || '').trim(),
   }
+}
+
+/**
+ * 学科检测:对 OCR 文本 + 公式做关键词投票,从 6 个学科中挑最匹配的一个
+ *
+ * 关键词来自各学科典型词汇。命中越多分数越高;全为 0 时返回 fallback
+ * (通常是用户在 UI 手动选的那个学科,或者保守回 '数学')。
+ *
+ * 设计原则:
+ * - 不依赖 LLM 额外调用,纯本地投票,零成本、快、可离线
+ * - 对「纯文字 + 多道选择题」场景,TextIn 识别出的文字本身就带学科特征
+ * - 公式密集(>5 条 LaTeX)→ 数学强信号,直接 boost 数学
+ */
+const SUBJECT_KEYWORDS = {
+  数学: ['方程', '不等式', '集合', '函数', '导数', '向量', '数列', '三角函数', 'sin', 'cos', 'tan', 'log', 'ln', '√', '√', '√', '²', '³', 'π', 'π', '解方程', '求解', '证明', '几何', '全等', '相似', '圆', '直线', '抛物线', '椭圆', '双曲线', '概率', '排列', '组合'],
+  物理: ['牛顿', '力', '加速度', '速度', '动能', '势能', '动量', '电路', '电场', '磁场', '电磁', '光', '波动', '频率', '波长', '折射', '反射', '热力学', '内能', '功', '功率', '电流', '电压', '电阻', '电荷', '电容', '电感', '变压器'],
+  化学: ['元素', '化合物', '反应', '氧化', '还原', '酸', '碱', '盐', '离子', '化合价', '摩尔', '浓度', 'pH', 'pH', '沉淀', '电解', '电解', '有机', '化学键', '分子', '原子', '同位素', '核素', '周期', '族', '官能团'],
+  语文: ['文言文', '现代文', '古诗', '诗', '词', '赋', '阅读', '作文', '字词', '拼音', '病句', '修辞', '比喻', '拟人', '排比', '成语', '名句', '默写', '标点', '语段'],
+  英语: ['语法', '时态', '从句', '虚拟语气', '完形', '阅读', '写作', '翻译', '词汇', '短语', '介词', '冠词', '冠词', '代词', '被动', '非谓语', '主谓一致', '定语', '状语', '倒装'],
+  生物: ['细胞', '遗传', '基因', 'DNA', 'RNA', '蛋白质', '酶', '呼吸', '光合', '生态', '进化', '神经', '免疫', '激素', '分裂', '减数', '染色体', '孟德尔', '变异', '显性', '隐性'],
+}
+
+// ─── 学科自动分类(2026-09-14:改用 LLM 按知识点判断,替换早期关键词投票)──
+//
+// 设计要点:
+// - 输入 = 题目标题 + 知识点标签 + 题目正文(截前 600 字,够 LLM 理解)
+// - LLM 输出一个 subject 字段:数学/语文/英语/物理/化学/生物/历史/地理
+//   (历史、地理是中学 6 大主科之外的"常识/历史/地理"科目,实际题目里很常见,
+//    例如二里头遗址、夏商周、秦朝、美国独立战争、地球运动等)
+// - 失败/超时 → 返回 fallback(用户手选的学科),绝不把题目归到错误学科
+// - 命中历史/地理 → 前端 SubjectTag 会自动 fallback 到"语文"(因为前端 6 学科里没有历史/地理)
+const VALID_SUBJECTS = ['数学', '语文', '英语', '物理', '化学', '生物', '历史', '地理', '科学']
+
+export async function detectSubjectByLLM({ title = '', knowledgePoint = '', textContent = '', fallback = '数学' }) {
+  // 任一输入都有内容才值得调 LLM
+  const signal = (title || knowledgePoint || (textContent || '').slice(0, 600)).trim()
+  if (!signal) return fallback
+
+  const prompt = `你是中学学科分类专家。根据下面这道题目的【标题】【知识点】【正文片段】,判断它属于哪一科。
+
+# 标题
+${title || '(无)'}
+
+# 知识点
+${knowledgePoint || '(无)'}
+
+# 正文片段(前 600 字)
+${(textContent || '').slice(0, 600) || '(无)'}
+
+可选值(从 9 个里选一个最贴切的):
+- 数学(方程/不等式/函数/几何/概率/统计)
+- 物理(力学/电学/光学/热学/波动/动量/能量)
+- 化学(元素/化合物/反应/氧化还原/化学键/有机)
+- 语文(文言文/古诗/阅读理解/字词/修辞/作文)
+- 英语(语法/词汇/时态/从句/阅读/完形)
+- 生物(细胞/遗传/基因/光合/呼吸/神经/免疫)
+- 历史(朝代/事件/人物/战争/制度/文明/史料)
+- 地理(地形/气候/洋流/人口/城市/地图/板块)
+- 科学(综合小学/初中理科,跨学科基础)
+
+**严格只输出一个词,从上面 9 个里选。不要输出任何解释、标点或引号。**`
+
+  // 优先 Agnes 文本(便宜稳定)
+  if (AGNES_KEY) {
+    try {
+      const raw = await callTextAPI({
+        apiKey: AGNES_KEY,
+        baseUrl: AGNES_BASE,
+        model: 'agnes-2.5-flash',
+        textPrompt: prompt,
+      })
+      const subject = String(raw || '').trim().replace(/^["'\s]+|["'\s]+$/g, '').slice(0, 4)
+      if (VALID_SUBJECTS.includes(subject)) return subject
+      console.warn(`[detectSubjectByLLM] Agnes 输出非法,值="${subject}",回 fallback`)
+      return fallback
+    } catch (err) {
+      console.warn('[detectSubjectByLLM] Agnes 调用失败:', err.message)
+      return fallback
+    }
+  }
+
+  return fallback
+}
+
+// ─── 旧版关键词投票(保留作为离线/低成本兜底,不再默认使用)────────────
+export function detectSubject(text = '', formulaCount = 0, fallback = '数学') {
+  const t = String(text || '')
+  if (!t && !formulaCount) return fallback
+  const scores = {}
+  for (const [subject, kws] of Object.entries(SUBJECT_KEYWORDS)) {
+    let s = 0
+    for (const kw of kws) if (t.includes(kw)) s += 1
+    scores[subject] = s
+  }
+  // 公式密集 → 数学加分(强信号)
+  if (formulaCount >= 5) scores['数学'] = (scores['数学'] || 0) + 3
+  else if (formulaCount >= 2) scores['数学'] = (scores['数学'] || 0) + 1
+
+  let best = fallback
+  let bestScore = -1
+  for (const [subject, s] of Object.entries(scores)) {
+    if (s > bestScore) { bestScore = s; best = subject }
+  }
+  // 全 0 命中 → 回 fallback(通常是用户在 UI 选的)
+  if (bestScore <= 0) return fallback
+  return best
 }

@@ -17,7 +17,7 @@ import dotenv from 'dotenv'
 dotenv.config()
 
 import { isTextInConfigured, eraseHandwriting, recognizeText } from '../services/textin.js'
-import { semanticParseText, visionFallback } from '../services/minimax.js'
+import { semanticParseText, visionFallback, detectSubjectByLLM } from '../services/minimax.js'
 import { normalizeLatex } from '../utils/latexNormalize.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { checkDailyLimit } from '../middleware/paywall.js'
@@ -100,11 +100,23 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
         const visionParsed = await visionFallback({ imageBase64, subject })
         if (visionParsed && visionParsed.textContent) {
           console.log(`[OCR] 视觉兜底成功: title="${visionParsed.title}"`)
+          // LLM 按知识点判断学科(基于 AI 解析出的 title/knowledgePoint/textContent)
+          const llmSubject = await detectSubjectByLLM({
+            title: visionParsed.title,
+            knowledgePoint: visionParsed.knowledgePoint,
+            textContent: visionParsed.textContent,
+            fallback: subject,
+          })
+          if (llmSubject !== subject) {
+            console.log(`[OCR] LLM 学科分类: 用户=${subject} → 检测=${llmSubject}`)
+          }
           return res.json({
             title: visionParsed.title,
             knowledgePoint: visionParsed.knowledgePoint || '未知',
             textContent: visionParsed.textContent,
-            subject,
+            sourceText: visionParsed.sourceText || '',
+            subject: llmSubject,
+            detectedSubject: llmSubject,
             detail: {
               ocrSuccess: true,
               handwritingErased,
@@ -112,6 +124,7 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
               formulaCount: formulaLatex.length,
               pipeline: 'textin+vision-primary',
               aiProvider: 'vision-primary',
+              subjectDetection: 'llm',
             },
           })
         }
@@ -133,6 +146,17 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
         if (parsed && parsed.title && parsed.textContent) {
           console.log(`[OCR] AI 文本合并成功: title="${parsed.title}", provider=${parsed._provider || '?'}`)
 
+          // LLM 按知识点判断学科(基于 AI 解析出的 title/knowledgePoint/textContent)
+          const llmSubject = await detectSubjectByLLM({
+            title: parsed.title,
+            knowledgePoint: parsed.knowledgePoint,
+            textContent: parsed.textContent,
+            fallback: subject,
+          })
+          if (llmSubject !== subject) {
+            console.log(`[OCR] LLM 学科分类: 用户=${subject} → 检测=${llmSubject}`)
+          }
+
           // ─── 低质量检测(2026-09-05):触发自动视觉兜底 ───────────────
           // 触发条件:textContent 过短(<60字),或缺少 4 个选项
           const text = parsed.textContent
@@ -144,11 +168,19 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
               const visionParsed = await visionFallback({ imageBase64, subject })
               if (visionParsed && visionParsed.textContent) {
                 console.log(`[OCR] 视觉兜底成功,覆盖原结果: title="${visionParsed.title}"`)
+                const visionLlmSubject = await detectSubjectByLLM({
+                  title: visionParsed.title,
+                  knowledgePoint: visionParsed.knowledgePoint,
+                  textContent: visionParsed.textContent,
+                  fallback: llmSubject,
+                })
                 return res.json({
                   title: visionParsed.title,
                   knowledgePoint: visionParsed.knowledgePoint || '未知',
                   textContent: visionParsed.textContent,
-                  subject,
+                  sourceText: visionParsed.sourceText || '',
+                  subject: visionLlmSubject,
+                  detectedSubject: visionLlmSubject,
                   detail: {
                     ocrSuccess: true,
                     handwritingErased,
@@ -156,6 +188,7 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
                     formulaCount: formulaLatex.length,
                     pipeline: 'textin+ai-text+vision-fallback',
                     aiProvider: 'vision-fallback',
+                    subjectDetection: 'llm',
                   },
                 })
               }
@@ -168,7 +201,9 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
             title: parsed.title,
             knowledgePoint: parsed.knowledgePoint || '未知',
             textContent: parsed.textContent,
-            subject,
+            sourceText: parsed.sourceText || '',
+            subject: llmSubject,
+            detectedSubject: llmSubject,
             detail: {
               ocrSuccess: true,
               handwritingErased,
@@ -176,6 +211,7 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
               formulaCount: formulaLatex.length,
               pipeline: 'textin+ai-text',
               aiProvider: parsed._provider || 'unknown',
+              subjectDetection: 'llm',
             },
           })
         }
@@ -193,17 +229,27 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
       const normalizedText = normalizeLatex(singleQuestionText)
       const { title: heurTitle, knowledgePoint: heurKP } = extractTitleAndKP(normalizedText, subject)
       console.log(`[OCR] TextIn 直接返回(AI 失败兜底): title="${heurTitle}"`)
+      // 快速路径没有 AI 解析,直接按知识点用 LLM 再判断一次学科
+      const directLlmSubject = await detectSubjectByLLM({
+        title: heurTitle,
+        knowledgePoint: heurKP,
+        textContent: normalizedText,
+        fallback: subject,
+      })
       return res.json({
         title: heurTitle,
         knowledgePoint: heurKP,
         textContent: normalizedText,
-        subject,
+        sourceText: '',
+        subject: directLlmSubject,
+        detectedSubject: directLlmSubject,
         detail: {
           ocrSuccess: true,
           handwritingErased,
           textLineCount: textLines.length,
           formulaCount: formulaLatex.length,
           pipeline: 'textin-direct',
+          subjectDetection: 'llm',
         },
       })
     }
@@ -213,17 +259,27 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
       const parsed = await visionFallback({ imageBase64, subject })
       if (parsed && parsed.title && parsed.textContent) {
         console.log(`[OCR] 视觉兜底成功: title="${parsed.title}"`)
+        // 视觉兜底也按知识点 LLM 判学科
+        const visionLlmSubject = await detectSubjectByLLM({
+          title: parsed.title,
+          knowledgePoint: parsed.knowledgePoint,
+          textContent: parsed.textContent,
+          fallback: subject,
+        })
         return res.json({
           title: parsed.title,
           knowledgePoint: parsed.knowledgePoint || '未知',
           textContent: parsed.textContent,
-          subject,
+          sourceText: parsed.sourceText || '',
+          subject: visionLlmSubject,
+          detectedSubject: visionLlmSubject,
           detail: {
             ocrSuccess: true,
             handwritingErased,
             textLineCount: 0,
             formulaCount: 0,
             pipeline: 'vision-fallback',
+            subjectDetection: 'llm',
           },
         })
       }

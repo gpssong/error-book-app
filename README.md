@@ -1,11 +1,10 @@
-# 错题本 App (v37)
+# 错题本 App (v38)
 
-多子女错题本应用，支持 **拍照识题 + AI讲解 + 手写批注 + 错题管理 + 多用户账号隔离**。
+多子女错题本应用，支持 **拍照识题 + AI讲解 + 手写批注 + 错题管理 + 多用户账号隔离 + 语文原文提取 + 学科 LLM 自动分类**。
 
-**最新版本**: `error-book-v37-ipv4-fallback.apk`
+**最新版本**: `error-book-v38-subject-llm.apk`
 **线上地址**: http://error.93gushi.com:4040
-**IPv4 直连**: http://220.187.13.231:4040（Wi-Fi 无 v6 时兜底）
-**内网直连**: http://192.168.0.14:4040
+**内网直连**: http://192.168.0.32:4040(飞牛 NAS 局域网)
 
 ## 技术栈
 
@@ -17,7 +16,8 @@
 | 数据库 | MongoDB（生产）/ 内存（演示）双模式 |
 | OCR | **TextIn**（合合信息）+ **Agnes vision**（多模态兜底） |
 | AI 修正 | **MiniMax-M3**（Anthropic Messages 协议，主 LaTeX 修正） |
-| 部署 | Ubuntu 192.168.0.14 + nginx + pm2（域名 AAAA 走 IPv6） |
+| 学科 LLM | **Agnes-2.5-flash** 按知识点判 9 学科（数学/语文/英语/物理/化学/生物/历史/地理/科学） |
+| 部署 | **飞牛 NAS 192.168.0.32** + Docker Compose(mongo:7 + nginx:alpine + backend) |
 
 ## 项目结构
 
@@ -122,6 +122,25 @@ textin OCR → 检测到公式 → Agnes vision 主路径（看图）
 - `throwOnError:false`：解析失败回退源码（不报错）
 - v14 修复：识别完成页（batchResult）的"录入明细"也用 LatexPreview 渲染（之前用 `<pre>` 原文输出）
 
+### 7. 语文原文提取(v38 新增)
+
+学生拍诗词题/阅读题时,题图通常包含原诗全文/文言文段落/阅读文章。旧版只 OCR 题干 + 4 选项,**原文丢了** → 孩子讲题时看不到全词。
+
+- LLM OCR 解析时多抽一个 `sourceText` 字段(诗词/文言文/阅读文章原文,保留标点 + 换行)
+- 入库 mongoose schema 加 `sourceText` 字段(默认空串)
+- 详情页加「📜 诗词原文 / 阅读文章」卡片:琥珀底色 + 楷体 + 自动换行,在知识点卡片和 AI 讲解按钮之间
+- AI 讲解(`/analyze`) 和同类题(`/similar`) prompt 注入原文,让 LLM 能引用原文 + 出同作者/同朝代类题
+
+### 8. 学科 LLM 自动分类 v2(v38 新增)
+
+v12 时代前端按用户选定的 `subject` 入错题,LLM OCR 解析出的知识点跟 `subject` 强绑 → 「二里头遗址」被识别成「物理」。
+
+- 后端 `detectSubjectByLLM({title, knowledgePoint, textContent, fallback})`:调 Agnes 文本模型(默认 `agnes-2.5-flash`),输出 9 学科之一
+- 无 AI key 时退化为关键词投票(`SUBJECT_KEYWORDS` 字典)
+- 5 个 ocr.js 返回路径都走 LLM 分类,结果写进 `subject` + `detectedSubject` + `detail.subjectDetection: 'llm'`
+- 学科枚举 6 → 9:数学/语文/英语/物理/化学/生物/历史/地理/科学
+- 前端 `ErrorListScreen` 筛选器动态拉(只显示当前有数据的学科)
+
 ## API 接口
 
 ### 认证（公开）
@@ -147,7 +166,7 @@ textin OCR → 检测到公式 → Agnes vision 主路径（看图）
 - `PATCH /api/errors/:id/ai-analysis` — 保存 AI 分析
 
 ### OCR（公开）
-- `POST /api/ocr` — `{imageBase64, subject, cleanHandwriting}` → `{title, knowledgePoint, textContent, detail}`
+- `POST /api/ocr` — `{imageBase64, subject, cleanHandwriting}` → `{title, knowledgePoint, textContent, sourceText, subject, detectedSubject, detail}`
 - `GET /api/ocr/status` — 检查 TextIn / Agnes 配置
 
 ### OCR 响应字段
@@ -156,62 +175,79 @@ textin OCR → 检测到公式 → Agnes vision 主路径（看图）
   "title": "对数最小值求解",
   "knowledgePoint": "对数函数",
   "textContent": "3.已知 $a>0,b>0,\\sqrt{ab}=\\dfrac{1}{a}+\\dfrac{1}{b}$,则 $\\dfrac{1}{\\log_{a}2}+\\dfrac{1}{\\log_{b}2}$ 的最小值为( )\nA. $3$\nB. $2$\nC. $\\sqrt{2}$\nD. $1$",
+  "sourceText": "",
   "subject": "数学",
+  "detectedSubject": "数学",
   "detail": {
     "ocrSuccess": true,
     "pipeline": "textin+vision-primary",
     "aiProvider": "vision-primary",
     "textLineCount": 7,
-    "formulaCount": 4
+    "formulaCount": 4,
+    "subjectDetection": "llm"
   }
 }
 ```
 
+> 语文题(诗词/文言文/阅读)的 `sourceText` 示例:
+> ```json
+> {
+>   "title": "古诗词理解与赏析",
+>   "knowledgePoint": "宋词",
+>   "textContent": "对下列词的理解与赏析,不正确的一项是...",
+>   "sourceText": "《苏幕遮》\n[北宋·范仲淹]\n碧云天,黄叶地,秋色连波,波上寒烟翠。\n山映斜阳天接水,芳草无情,更在斜阳外。\n..."
+> }
+> ```
+
 ## 部署信息
 
-### 服务器
-- IPv4: `192.168.0.14`（内网）/ `60.185.134.142`（公网，已废）
-- **IPv6**: `240e:390:88f7:6cb1::697`（域名 AAAA 记录）
-- 域名: `error.93gushi.com`
-- SSH: `gpssong@192.168.0.14`（密码: `850225song`）
-- 端口: 3001（后端）/ 4040（nginx 反代）
+### 服务器（v38 起：飞牛 NAS）
 
-### 部署命令（实测可用）
+- **内网 IP**: `192.168.0.32`（飞牛 NAS，Debian 12 + Docker Compose）
+- **IPv6**: `240e:390:88f6:c681::3f3`（NAS 动态 v6，域名 AAAA 记录）
+- **域名**: `error.93gushi.com`（AAAA → 飞牛 v6；A 记录已删，飞牛无 v4 出口）
+- **SSH**: `gpssong@192.168.0.32`（密码: `850225sonG`，注意 G 大写）
+- **端口**: 4040（nginx 反代）→ 容器内 backend:3001
+- **容器**: `error-book-mongo` / `error-book-backend` / `error-book-nginx`
+
+> ⚠️ 旧的 Ubuntu 服务器 `192.168.0.14`（pm2 + mongo）已下线，数据已迁移到飞牛。`frontend/src/stores/api.ts` 里的 4 候选 base 仍保留 `192.168.0.14` 作为历史兜底（探测不到即跳过），不影响线上。
+
+### 部署命令（飞牛 NAS 实测可用）
+
+后端改动走「构建镜像 + 重启容器」：
+
 ```bash
-# 1. 后端文件
-sshpass -p '850225song' scp backend/src/utils/latexNormalize.js \
-  backend/src/services/minimax.js backend/src/routes/ocr.js \
-  gpssong@192.168.0.14:/tmp/
-sshpass -p '850225song' ssh gpssong@192.168.0.14 \
-  'echo "850225song" | sudo -S -p "" cp /tmp/latexNormalize.js \
-   /home/gpssong/error-book/backend/src/utils/ && \
-   cp /tmp/minimax.js /home/gpssong/error-book/backend/src/services/ && \
-   cp /tmp/ocr.js /home/gpssong/error-book/backend/src/routes/ && \
-   chown -R gpssong:gpssong /home/gpssong/error-book/backend/src/{utils,services,routes}/'
+# 1. 同步 backend 源码到 NAS
+sshpass -p '850225sonG' scp -r backend/src/ gpssong@192.168.0.32:/tmp/eb-src/
 
-# pm2 reload(必须用绝对路径 + 完整 PATH,否则 "node: No such file")
-sshpass -p '850225song' ssh gpssong@192.168.0.14 \
-  'PATH=/home/gpssong/.nvm/versions/node/v20.20.2/bin:$PATH \
-   /home/gpssong/.nvm/versions/node/v20.20.2/bin/pm2 reload error-book-backend'
+# 2. 在 NAS 上重建 backend 镜像并重启
+sshpass -p '850225sonG' ssh gpssong@192.168.0.32 \
+  'echo "850225sonG" | sudo -S -p "" bash -c "\
+     cd /volume1/docker/error-book && \
+     docker build -t error-book-backend ./backend && \
+     docker compose up -d backend"'
 
-# 2. 前端 build + 部署
-cd frontend && pnpm build
-cd ..
-tar czf /tmp/error-book-dist.tar.gz -C frontend/dist .
-sshpass -p '850225song' scp /tmp/error-book-dist.tar.gz gpssong@192.168.0.14:/tmp/
-sshpass -p '850225song' ssh gpssong@192.168.0.14 \
-  'echo "850225song" | sudo -S -p "" bash -c \
-   "rm -rf /var/www/error-book/* /var/www/error-book/.[!.]* 2>/dev/null; \
-    tar xzf /tmp/error-book-dist.tar.gz -C /var/www/error-book/ && \
-    chown -R www-data:www-data /var/www/error-book"'
+# 3. 前端 build + 同步 dist 到 nginx 容器挂的目录
+cd frontend && pnpm build && cd ..
+sshpass -p '850225sonG' scp -r frontend/dist/ gpssong@192.168.0.32:/tmp/eb-dist/
+sshpass -p '850225sonG' ssh gpssong@192.168.0.32 \
+  'echo "850225sonG" | sudo -S -p "" bash -c "\
+     rm -rf /volume1/docker/error-book/nginx/html/* && \
+     cp -r /tmp/eb-dist/* /volume1/docker/error-book/nginx/html/"'
 
-# 3. 出 APK
+# 4. 健康检查(走 v6)
+curl -6 -s 'http://[240e:390:88f6:c681::3f3]:4040/api/ocr/status'
+```
+
+### 出 APK
+
+```bash
 cd android-app && rm -rf www && cp -R ../frontend/dist www/ && npx cap sync android
 sed -i '' 's/JavaVersion.VERSION_21/JavaVersion.VERSION_17/g' \
   android-app/android/app/capacitor.build.gradle   # ⚠️ 每次 sync 后必做
 cd android
 JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew --offline assembleDebug
-cp app/build/outputs/apk/debug/app-debug.apk ../apk/error-book-v$N.apk
+cp app/build/outputs/apk/debug/app-debug.apk ../apk/error-book-v38-subject-llm.apk
 ```
 
 ### nginx 关键配置（防 413）
@@ -223,6 +259,7 @@ client_max_body_size 20m;  # OCR base64 大图必须放大
 
 | 版本 | 日期 | 主要变化 |
 |---|---|---|
+| **v38** | 2026-09-14 | 语文题 sourceText(诗词/文言文/阅读原文提取+展示+AI 引用)；学科 LLM 自动分类 v2(9 学科,按知识点判)；JWT 30 天；迁移到飞牛 NAS(Docker Compose) |
 | **v37** | 2026-09-06 | Wi-Fi 无 v6 兜底:API base 4 候选探测 fallback + 域名新增 A 记录 `220.187.13.231` |
 | **v36** | 2026-09-05 | 打印参考答案改用AI讲解答案:`aiAnalysis` 增加 `answer` 字段,`getAnswer()` 优先用 AI 讲解最终答案 |
 | **v35** | 2026-09-05 | 选择题打印时选项与题目重叠修复:`print:overflow-visible` + `print:max-h-none` 解决 KaTeX 公式截断溢出 |
@@ -266,8 +303,8 @@ client_max_body_size 20m;  # OCR base64 大图必须放大
 ## 测试
 
 ```bash
-# 验证后端健康
-curl -6 -s 'http://[240e:390:88f7:6cb1::697]:4040/api/ocr/status'
+# 验证后端健康(飞牛 v6)
+curl -6 -s 'http://[240e:390:88f6:c681::3f3]:4040/api/ocr/status'
 # 应返回 {"textin":"configured","visionModel":"agnes-2.5-pro-alpha","minimax":"configured"}
 
 # OCR 流程跑通测试
@@ -281,10 +318,12 @@ curl -6 -s 'http://[240e:390:88f7:6cb1::697]:4040/api/ocr/status'
 
 - `npx cap sync android` 会把 `capacitor.build.gradle` 的 Java 版本改成 21，**必须**手动 sed 回 17
 - 前端代码必须先 `pnpm build` 才能 cap sync
-- pm2 不在默认 PATH，必须用 `/home/gpssong/.nvm/versions/node/v20.20.2/bin/pm2` 绝对路径
-- macOS 本机 `scp -r dist/*` 到 `/var/www/error-book/` 会因 www-data 所有权失败 —— 用 tar 包方式
+- 飞牛 NAS 上 `gpssong` 用户没加入 docker 组，`docker ps` 直接跑会 `permission denied` —— 用 `sudo -S -p "" docker ...`（密码 `850225sonG`）
+- 飞牛 buildkit 走 `docker.fnnas.com` 镜像会 401 —— 后端改动用 `docker build`(吃本地缓存 base image)+ `docker compose up -d`,不要 `docker compose build` 拉全量
+- 飞牛后端容器读环境变量 `MONGODB_URI`(不是 `MONGO_URI`),写错 db 会退化成 memory 模式
+- 登录接口字段名是 `account`(不是 `username`),`account` 同时接受用户名/邮箱
 - IPv6 是动态租约（~7天），DNS AAAA 可能过期 —— 重启路由器或手动更新
-- happy-eyeballs 优先 v4 → curl 必须加 `-6` 才能测 IPv6-only 域名
+- happy-eyeballs 优先 v4 → 飞牛无 v4 出口,手机/电脑必须走 v6,curl 必须加 `-6` 才能测 IPv6-only 域名
 - 后端在 FNOS/Docker 容器里时，`/tmp/` 目录可能没权限，先 `sudo mkdir -p /tmp && sudo chmod 1777 /tmp`
 
 ## License

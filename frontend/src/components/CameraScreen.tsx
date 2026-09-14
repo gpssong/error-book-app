@@ -101,7 +101,7 @@ export default function CameraScreen({ onNavigate }: Props) {
       }
 
       // 2) 对每框裁剪 + 独立 OCR
-      const results: Array<{ idx: number; title: string; knowledgePoint: string; textContent: string; croppedUrl: string; ok: boolean; message?: string }> = []
+      const results: Array<{ idx: number; title: string; knowledgePoint: string; textContent: string; sourceText?: string; croppedUrl: string; ok: boolean; detectedSubject?: string; message?: string }> = []
       for (let i = 0; i < regions.length; i++) {
         try {
           const croppedUrl = await cropImage(fullBase64, regions[i])
@@ -112,8 +112,10 @@ export default function CameraScreen({ onNavigate }: Props) {
             title: r.title || '',
             knowledgePoint: r.knowledgePoint || '',
             textContent: r.textContent || '',
+            sourceText: r.sourceText || '',
             croppedUrl,
             ok: true,
+            detectedSubject: r.detectedSubject as string | undefined,
           })
         } catch (e: any) {
           console.error(`[OCR] 第 ${i + 1} 框识别失败:`, e)
@@ -133,21 +135,33 @@ export default function CameraScreen({ onNavigate }: Props) {
       setRecognizeProgress(100)
 
       // 3) 全部入错题库(成功 + 失败的都创建,但失败的标记 title="需手动补录")
+      // 学科优先级: detectedSubject(AI 自动检测) > recognizeSubject(用户手选)
       let successCount = 0
+      const correctedSubjects = new Set<string>()
       for (const r of results) {
         const title = r.ok && r.title ? r.title : `第 ${r.idx + 1} 题${r.ok ? '' : '(需补录)'}`
         const textContent = r.ok ? r.textContent : ''
+        const finalSubject = (r.detectedSubject && r.detectedSubject !== '未知') ? r.detectedSubject as Subject : recognizeSubject
+        if (r.detectedSubject && r.detectedSubject !== '未知' && r.detectedSubject !== recognizeSubject) {
+          correctedSubjects.add(r.detectedSubject)
+        }
         await createError({
           childId: activeChildId,
-          subject: recognizeSubject,
+          subject: finalSubject,
           title,
           knowledgePoint: r.knowledgePoint || '',
           textContent,
+          sourceText: r.sourceText || '',
           imageUrl: r.croppedUrl || (recognizedImageBase64 || capturedImageUrl),
           imageBase64: r.croppedUrl || undefined,
           handwritingSvg: existingHandwritingSvg || undefined,
         })
         if (r.ok) successCount++
+      }
+
+      // 学科被自动纠正 → 弹轻提示,让用户知道题目归到了正确的学科
+      if (correctedSubjects.size > 0) {
+        console.log(`[OCR] 学科自动纠正: ${[...correctedSubjects].join('、')}`)
       }
 
       setRecognizedData({
@@ -528,7 +542,7 @@ export default function CameraScreen({ onNavigate }: Props) {
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <p className="text-xs font-extrabold text-slate-700 mb-2">科目确认（可修改）</p>
               <div className="flex flex-wrap gap-2">
-                {(['数学', '物理', '化学', '语文', '英语', '生物'] as Subject[]).map((sub) => (
+                {(['数学', '物理', '化学', '语文', '英语', '生物', '历史', '地理', '科学'] as Subject[]).map((sub) => (
                   <button
                     key={sub}
                     onClick={() => setRecognizeSubject(sub)}

@@ -63,6 +63,7 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
         knowledgePoint: err.knowledgePoint,
         subject: err.subject,
         textContent: err.textContent,
+        sourceText: err.sourceText,        // 语文题把诗词原文/阅读文章也带上,讲解更准
         childId: err.childId,
       })
       setAiResult(result)
@@ -88,6 +89,8 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
         title: err.title,
         knowledgePoint: err.knowledgePoint,
         subject: err.subject,
+        textContent: err.textContent,
+        sourceText: err.sourceText,        // 语文题:让 AI 出同类题时参考原文
         childId: err.childId,
       })
       setSimilarQuestions(res.questions)
@@ -305,6 +308,23 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
                 <span className="text-xs font-bold text-slate-700">{err.date}</span>
               </div>
             </div>
+
+            {/* 诗词原文 / 阅读文章原文(仅语文题有)*/}
+            {err.sourceText && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">📜</span>
+                  <span className="text-xs font-extrabold text-slate-700">诗词原文 / 阅读文章</span>
+                </div>
+                <div
+                  className="text-xs text-slate-700 font-bold leading-loose whitespace-pre-wrap p-3 rounded-lg"
+                  style={{ background: '#FFFBEB', border: '1px solid #FDE68A', fontFamily: "'KaiTi', '楷体', serif" }}
+                >
+                  {err.sourceText}
+                </div>
+                <p className="text-[10px] text-slate-400">AI 自动从图片中提取,讲题时不用再去翻书</p>
+              </div>
+            )}
 
             <button
               onClick={() => setTabActive('ai')}

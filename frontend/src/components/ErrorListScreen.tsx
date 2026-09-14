@@ -44,7 +44,13 @@ export default function ErrorListScreen({ onNavigate }: Props) {
     }
   }
 
-  const subjects: (Subject | '全部')[] = ['全部', '数学', '语文', '英语', '物理', '化学', '生物']
+  // 学科列表:基础 7 科 + 动态从当前孩子错题里提取的历史/地理/科学
+  const baseSubjects: (Subject | '全部')[] = ['全部', '数学', '语文', '英语', '物理', '化学', '生物']
+  const dynamicSubjects = new Set<Subject>()
+  for (const e of childErrors) {
+    if (e.subject && !baseSubjects.includes(e.subject as Subject)) dynamicSubjects.add(e.subject as Subject)
+  }
+  const subjects: (Subject | '全部')[] = [...baseSubjects, ...Array.from(dynamicSubjects)]
 
   return (
     <div className="flex flex-col h-full bg-[#F8FAFC]" style={{ fontFamily: "'Nunito', sans-serif" }}>

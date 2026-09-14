@@ -336,7 +336,14 @@
       font-size: 13px;
     }
     .empty .icon { font-size: 32px; margin-bottom: 8px; }
-  
+    /* 令牌过期状态 */
+    .account-status.expired {
+      background: #FEF2F2;
+      border: 1.5px solid #FECACA;
+      border-radius: 12px;
+      padding: 12px 16px;
+    }
+
     /* ─── Admin Panel ─── */
     .admin-user-card {
       display: flex;
@@ -703,18 +710,26 @@ function renderAccountStatus() {
   const el = document.getElementById('accountStatus')
   if (current) {
     const a = accounts.find(x => x.id === current.id)
+    // 检查 token 是否过期
+    const isExpired = new Date(current.exp) < new Date()
     el.innerHTML = `
       <div style="display:flex;align-items:center;gap:12px">
         <div class="avatar" style="width:52px;height:52px;font-size:22px">${(a?.username||'?')[0].toUpperCase()}</div>
         <div>
           <div style="font-size:16px;font-weight:800">${esc(a?.username || current.username)}</div>
           <div style="font-size:12px;color:#64748B">${esc(a?.email || '')}</div>
-          <div style="font-size:11px;color:#94A3B8;margin-top:4px">已登录 · 令牌有效期至 ${formatExp(current.exp)}</div>
+          <div style="font-size:11px;margin-top:4px">
+            ${isExpired
+              ? '<span style="color:#DC2626;font-weight:700">⚠️ 令牌已过期</span>'
+              : `<span style="color:#94A3B8">已登录 · 令牌有效期至 ${formatExp(current.exp)}</span>`}
+          </div>
         </div>
-        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="logout()">🚪 退出</button>
+        ${isExpired
+          ? `<button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="showAccountModal()">🔄 重新登录</button>`
+          : `<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="logout()">🚪 退出</button>`}
       </div>
     `
-    el.className = ''
+    el.className = isExpired ? 'expired' : ''
   } else {
     el.innerHTML = '<div class="empty"><div class="icon">🔒</div><div>未登录任何账号</div></div>'
     el.className = 'empty'
@@ -789,7 +804,7 @@ async function submitAccount() {
       email: data.user.email,
       displayName: data.user.displayName,
       token: data.token,
-      exp: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      exp: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     }
 
     if (accountMode === 'login') {
@@ -1157,11 +1172,19 @@ let adminUsers = []
 
 async function loadAdmin() {
   if (!current?.id) return
+  // 检查 token 是否已过期
+  if (new Date(current.exp) < new Date()) {
+    console.warn('[config] Token 已过期，无法加载管理员面板，请重新登录')
+    return
+  }
   // 用存储的 token 检查是否为管理员
   const resp = await fetch(getApiBase() + '/api/auth/me', {
     headers: { Authorization: 'Bearer ' + current.token },
   })
-  if (!resp.ok) return
+  if (!resp.ok) {
+    console.warn('[config] Token 无效或已过期:', resp.status)
+    return
+  }
   const user = await resp.json()
   if (!user.isAdmin) return
   document.getElementById('adminTabBtn').style.display = ''

@@ -1,5 +1,72 @@
 # Changelog
 
+## v38 (2026-09-14) - 语文题 sourceText + 学科 LLM 分类 + 飞牛 NAS 迁移
+
+### 新增
+
+#### 语文题 sourceText(诗词原文/文言文/阅读文章)
+
+学生拍诗词题/阅读题时,题图通常包含原诗全文/文言文段落/阅读文章。旧版只 OCR 题干 + 4 选项,**原文丢了** → 孩子讲题时看不到全词。手动去翻书太麻烦。
+
+- **后端 `services/minimax.js`**: SYSTEM_PROMPT 加 `sourceText` 字段说明(语文类用,其它留空);`normalizeParsed` 透传 `sourceText`
+- **后端 `routes/ocr.js`**: 5 个 `res.json` 加 `sourceText: parsed.sourceText || ''`
+- **后端 `schemas/errorQuestion.js`**: mongoose schema 加 `sourceText: { type: String, default: '' }`;`createMemoryError` 透传
+- **后端 `routes/ai.js`**: `/analyze` + `/similar` prompt 注入 `${sourceText ? ... : ''}`,让 LLM 讲解时能引用原文
+- **前端 `stores/api.ts`**: `ErrorItem` 加 `sourceText?`;`recognizeQuestion` / `analyzeError` / `generateSimilar` 类型都加
+- **前端 `CameraScreen.tsx`**: results.push 加 `sourceText`;`createError({sourceText})` 透传
+- **前端 `ErrorDetailScreen.tsx`**: 题目详情 Tab 在知识点卡片和 AI 讲解按钮之间插入「诗词原文 / 阅读文章」卡片(琥珀底色 + 楷体 + 自动换行)
+
+#### 学科自动分类 v2(LLM 按知识点判 9 学科)
+
+v12 时代前端按用户选定的 `subject` 入错题,LLM OCR 解析出的知识点跟 `subject` 强绑 → 「二里头遗址」被识别成「物理」。
+
+- **`services/minimax.js`**: 新增 `detectSubjectByLLM({title, knowledgePoint, textContent, fallback})`
+  - 调用 Agnes 文本模型(默认 `agnes-2.5-flash`),输出 9 学科之一
+  - `SUBJECT_KEYWORDS` 关键词投票兜底(无 AI key 时按 历史/地理/科学 关键词匹配)
+  - `VALID_SUBJECTS = ['数学','语文','英语','物理','化学','生物','历史','地理','科学']`
+- **`routes/ocr.js`**: 5 个返回路径都走 LLM 分类,结果写进 `subject` + `detectedSubject` + `detail.subjectDetection: 'llm'`
+- **`schemas/errorQuestion.js`**: `subject` 枚举 6→9(加 历史/地理/科学)
+- **前端 `Icons.tsx`**: `subjectColors` 加 3 色;新增 `subjectColorSafe()` 兜底
+- **前端 `ErrorListScreen.tsx`**: 筛选器动态拉(从当前错题里去掉「数学」基础项,只显示有数据的扩展学科)
+
+### 修复 / 调优
+
+- **JWT 有效期 7d → 30d**(`backend/src/middleware/auth.js`):减少用户频繁重登,30 天 token 内 App 直接免登录
+- **`frontend/public/config.html`**: 管理员配置面板新增 sourceText 字段说明
+- **`routes/ai.js` `/similar`**: 参考原题现在带 `textContent` + `sourceText`,让 LLM 出同作者/同朝代类题
+
+### 部署
+
+- **服务器迁移 Ubuntu 192.168.0.14 → 飞牛 NAS 192.168.0.32**(Docker Compose + mongo:7 + nginx:alpine + 自定义 backend 镜像)
+- 老数据(1.2MB, 2 users, 2 errorquestions)已迁移到 NAS mongo
+- 历史「古诗词理解与赏析」题重新分类为「语文」;「外卖小票」重新分类为「科学」
+- 4 条 placeholder( subject='math' 占位)已删除
+- DNS: 阿里云 AAAA 记录更新到飞牛 IPv6,A 记录删除(飞牛无 v4 出口)
+- **线上地址**: http://error.93gushi.com:4040
+
+### 修改文件汇总(11 个)
+
+| 文件 | 改动 |
+|---|---|
+| `backend/src/middleware/auth.js` | JWT 7d → 30d |
+| `backend/src/routes/ai.js` | /analyze + /similar 注入 sourceText |
+| `backend/src/routes/ocr.js` | 5 个返回加 sourceText + LLM 学科分类 |
+| `backend/src/schemas/errorQuestion.js` | subject 枚举 6→9 + 新增 sourceText 字段 |
+| `backend/src/services/minimax.js` | SYSTEM_PROMPT 加 sourceText + detectSubjectByLLM |
+| `frontend/public/config.html` | 管理员面板说明 |
+| `frontend/src/components/CameraScreen.tsx` | createError 透传 sourceText |
+| `frontend/src/components/ErrorDetailScreen.tsx` | 诗词原文卡片 + AI 透传 sourceText |
+| `frontend/src/components/ErrorListScreen.tsx` | 学科筛选器动态化 |
+| `frontend/src/components/Icons.tsx` | 3 新学科色 + subjectColorSafe |
+| `frontend/src/stores/api.ts` | ErrorItem 加 sourceText + Subject 9 类型 |
+
+### 已知
+
+- 老数据(迁移前的古诗词题) `sourceText` 是空串(预期,只对**新拍题**生效)
+- LLM 学科分类依赖 Agnes AI;无 AI key 时退化为关键词投票(数学题 9 学科识别度有限,其它 8 学科 OK)
+
+---
+
 ## v37 (2026-09-06) - IPv4 fallback + DNS A 记录
 
 ### 问题
