@@ -25,7 +25,7 @@ import authRoutes from './routes/auth.js'
 import subscriptionRoutes from './routes/subscription.js'
 import configRoutes from './routes/config.js'
 import adminRoutes from './routes/admin.js'
-import { connectDB } from './schemas/db.js'
+import { connectDB, ensureMongoReconnect, watchDisconnection } from './schemas/db.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -65,6 +65,9 @@ async function main() {
     } catch (err) {
       console.warn('⚠️  MongoDB 连接失败，自动启用内存数据库:', err.message)
       process.env.USE_MEMORY_DB = 'true'
+      // v39 加固: 后台每 5s 重试连 mongo，连上后清标记切回 MongoDB，
+      // 避免 mongo 晚就绪/中途断连时永久卡在易失内存模式。
+      ensureMongoReconnect()
     }
   } else {
     console.log('🧪 使用内存数据库模式')
@@ -72,7 +75,9 @@ async function main() {
 
   app.listen(PORT, () => {
     console.log(`🚀 后端服务运行于 http://localhost:${PORT}`)
-    console.log(`📖 API 文档: http://localhost:${PORT}/api/health`)
+    console.log(`📖 API 文档: http://localhost:3001/api/health`)
+    // v39 加固: mongo 中途断开时自动重连（配合启动时兜底）
+    watchDisconnection()
   })
 }
 

@@ -1,5 +1,57 @@
 # Changelog
 
+## v39 (2026-09-17) - 后端 MongoDB 竞态加固(启动门控 + 运行期自愈)
+
+### 背景
+
+gpssong 账号突然无法登录。排查发现根因是**启动竞态**:backend 启动那一刻 mongo 容器还没就绪 → mongoose 5 秒超时 `ECONNREFUSED 172.21.0.4:27017` → `index.js` 捕获后退化成**内存模式**(`USE_MEMORY_DB=true`)且**永不重试** → 一直查空的内存 store,登录 401。数据本身没丢(mongo 里 gpssong/臭妞儿 2 账号都在),只是 backend 连不上库。
+
+临时修复是 `docker restart error-book-backend` 让它重连上 mongo。但竞态会复发,本次做两层加固:
+
+### 改动
+
+#### 1. `docker-compose.yml`:mongo 就绪门控(治本)
+
+```yaml
+mongo:
+  healthcheck:
+    test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+    interval: 2s
+    timeout: 5s
+    retries: 20
+    start_period: 10s
+backend:
+  depends_on:
+    mongo:
+      condition: service_healthy   # 原为无条件 depends_on: - mongo
+```
+
+compose 起 backend 前先等 mongo 通过 `mongosh ping`,从根上消除「backend 抢在 mongo 前启动」的竞态。
+
+#### 2. `backend/src/schemas/db.js` + `index.js`:运行期自愈(兜底)
+
+- `ensureMongoReconnect()`:连失败后后台每 5s 重试(最多 3 小时),连上即清 `USE_MEMORY_DB` 标记、切回 MongoDB
+- `watchDisconnection()`:监听 mongoose `disconnected` 事件,mongo 中途 OOM/重启/断网时自动触发重连
+- `isMemoryDB()` 语义收紧为 `USE_MEMORY_DB==='true' && readyState!==1`——只要真连上 mongo(readyState===1)就自动切回,不再被环境变量卡死
+
+这样覆盖「启动竞态」+「运行中断连」两种场景,后端静默自愈,不再需要手动 restart。
+
+### 部署
+
+- backend 镜像重建 + `docker compose up -d`(日志确认 `Waiting → Healthy`,backend 等 mongo healthy 才起)
+- nginx 因 backend recreate 后 IP 变化一度 502,`docker restart error-book-nginx` 重新解析上游后恢复
+- `/api/health` 报 `db: mongodb`,gpssong 登录 `/me` 200 admin
+
+### 文件
+
+| 文件 | 改动 |
+|---|---|
+| `docker-compose.yml` | mongo healthcheck + backend `service_healthy` 门控 |
+| `backend/src/schemas/db.js` | `ensureMongoReconnect` / `watchDisconnection` / `isMemoryDB` 收紧 |
+| `backend/src/index.js` | 连失败调 `ensureMongoReconnect`,启动后注册 `watchDisconnection` |
+
+---
+
 ## v38.2 (2026-09-17) - DDNS 自动同步（飞牛 v6 → 阿里云 AAAA）
 
 ### 背景

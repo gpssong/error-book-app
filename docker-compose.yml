@@ -11,6 +11,15 @@ services:
       - ./mongo-data:/data/db
       - ./mongo-log:/var/log/mongodb
     command: ["mongod", "--bind_ip_all"]
+    # v39 加固: mongo 就绪门控。backend 启动时若 mongo 没 ready 会 ECONNREFUSED
+    # 退化内存模式且不重试 → gpssong 等账号查不到无法登录。
+    # 加 healthcheck 让 backend 等 mongo 真正 ping 通才启动。
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
     networks:
       - error-book-net
 
@@ -20,7 +29,8 @@ services:
     container_name: error-book-backend
     restart: unless-stopped
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       PORT: 3001
