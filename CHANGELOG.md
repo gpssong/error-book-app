@@ -1,5 +1,54 @@
 # Changelog
 
+## v38.2 (2026-09-17) - DDNS 自动同步（飞牛 v6 → 阿里云 AAAA）
+
+### 背景
+
+飞牛 NAS 的公网 IPv6 是运营商**动态租约（~7 天）**，到期换地址后 `error.93gushi.com` 的 AAAA 记录仍指向旧值 → 公网打不开（容器/nginx/4040 本地都正常，纯 DNS 没跟上）。
+
+本次手动修复时把 AAAA 从旧 `240e:390:88f6:c681::3f3` 更新到当前 `240e:390:88f4:5a91::3f3`，并搭好自动同步，让下次 v6 再变也能自动跟上。
+
+### 改动
+
+#### 1. `scripts/ddns-update.sh` 重写（旧版 3 个问题全修）
+
+| 旧版问题 | 修复 |
+|---|---|
+| 依赖已下线的 `gpssong@192.168.0.14` 拿 v6 | 真源改到飞牛 `192.168.0.32`，SSH 读 `ip -6 addr` 实时全局 v6 |
+| 假设飞牛有 v4 出口、更新 A 记录 | 只做 AAAA（飞牛无 v4 出口，A 记录无意义） |
+| `aliyun` / `sshpass` 用裸命令名，cron PATH 没有 homebrew → 一直报 "aliyun CLI 未安装"，**脚本从未真正生效** | 全部改全路径 `/opt/homebrew/bin/...` + crontab 顶部 `PATH=` 行 |
+
+**决策逻辑**：每 5 分钟比对「飞牛当前 v6」与「阿里云当前 AAAA」，一致就跳过（不打 API），不一致才 `UpdateDomainRecord` 刷新。
+
+#### 2. crontab
+
+```
+PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin
+*/5 * * * * /Users/tongban/projects/error-book-app/scripts/ddns-update.sh >> /tmp/ddns-update.log 2>&1
+```
+
+### 踩坑记录
+
+- 阿里云 DNS API `DescribeDomainRecords` 的 `--DomainName` 必须传**根域** `93gushi.com`，传 FQDN `error.93gushi.com` 会报 `InvalidDomainName.NoExist`；子域走 `--RR error`
+- `UpdateDomainRecord` 不接受 `--DomainName` 参数（跟 Describe 不一致）
+- 阿里云 DNS 必须走 `--profile dns`（套 2 的 AK `LTAI5t6jBuHjTYd7SnGRj3iP`），默认 profile 没这个域名权限
+- 更新成已存在的值会报 `DomainRecordDuplicate`（本脚本靠"先查再对比"规避，不是 bug）
+
+### 验证
+
+- 手动跑 `bash scripts/ddns-update.sh` → `OK 一致` 退出码 0
+- 模拟 cron 最小环境（`env -i PATH=...`）跑通
+- 下次 v6 变化后 5 分钟内自动刷新，无需人工介入
+
+### 文件
+
+| 文件 | 改动 |
+|---|---|
+| `scripts/ddns-update.sh` | 重写（飞牛 v6 真源 + 全路径 + 阿里云对比决策） |
+| crontab | 加 `PATH=` 行 + `*/5` ddns 行 |
+
+---
+
 ## v38.1 (2026-09-14) - 登录态持久化 + APK 插件链接修复 + 飞牛 nginx 挂载加固
 
 ### 修复

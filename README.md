@@ -204,7 +204,7 @@ v12 时代前端按用户选定的 `subject` 入错题,LLM OCR 解析出的知�
 ### 服务器（v38 起：飞牛 NAS）
 
 - **内网 IP**: `192.168.0.32`（飞牛 NAS，Debian 12 + Docker Compose）
-- **IPv6**: `240e:390:88f6:c681::3f3`（NAS 动态 v6，域名 AAAA 记录）
+- **IPv6**: 动态租约（~7 天），随运营商变化 → **不写死**，由 DDNS 自动同步脚本实时追踪
 - **域名**: `error.93gushi.com`（AAAA → 飞牛 v6；A 记录已删，飞牛无 v4 出口）
 - **SSH**: `gpssong@192.168.0.32`（密码: `850225sonG`，注意 G 大写）
 - **端口**: 4040（nginx 反代）→ 容器内 backend:3001
@@ -259,10 +259,37 @@ cp app/build/outputs/apk/debug/app-debug.apk ../apk/error-book-v38-subject-llm.a
 client_max_body_size 20m;  # OCR base64 大图必须放大
 ```
 
+### DDNS 自动同步（飞牛 v6 变化 → 阿里云 AAAA）
+
+飞牛 NAS 的公网 IPv6 是**运营商动态租约（~7 天）**，到期换地址后 `error.93gushi.com` 的 AAAA 记录仍指旧值 → 公网打不开。
+
+`scripts/ddns-update.sh` 每 5 分钟自动比对「飞牛当前 v6」与「阿里云当前 AAAA」，不一致就 `UpdateDomainRecord` 刷新。
+
+```bash
+# 手动跑一次
+bash scripts/ddns-update.sh
+
+# 日志
+tail -f /tmp/ddns-update.log
+
+# 看当前 crontab (每 5 分钟)
+crontab -l | grep ddns
+```
+
+**脚本要点**：
+- 真源是**飞牛 NAS 实时 v6**（`ssh gpssong@192.168.0.32 'ip -6 addr ...'`），不依赖本地 `ifconfig.me`
+- 决策 = 对比飞牛 v6 与阿里云 AAAA，一致就跳过（不打 API），不一致才更新
+- `aliyun` / `sshpass` 写**全路径** `/opt/homebrew/bin/...`（cron PATH 不含 homebrew，否则报 "aliyun CLI 未安装"）
+- 阿里云 DNS 走 `--profile dns`（套 2 的 AK `LTAI5t6jBuHjTYd7SnGRj3iP`，默认 profile 无此域名权限）
+- `DomainName` 必须传**根域** `93gushi.com`，`RR=error`（传 FQDN 会报 `InvalidDomainName.NoExist`）
+
+> ⚠️ 只有 **v6** 有自动同步。飞牛无 v4 出口，A 记录无意义，纯 v4 网络（部分 Wi-Fi）依旧打不开。
+
 ## 版本历史
 
 | 版本 | 日期 | 主要变化 |
 |---|---|---|
+| **v38.2** | 2026-09-17 | DDNS 自动同步:飞牛 v6 动态租约变化 → 每5分钟 cron 比对刷新阿里云 AAAA 记录(脚本 `scripts/ddns-update.sh`,全路径 + `--profile dns` + 根域 `93gushi.com`) |
 | **v38.1** | 2026-09-14 | 登录态持久化(SharedPreferences 双写+启动回填);APK Preferences 插件链接修复(Kotlin JVM 21→17 + 强制 aar 产出);飞牛 nginx 挂载加固(healthcheck + 部署后 nginx -s reload) |
 | **v38** | 2026-09-14 | 语文题 sourceText(诗词/文言文/阅读原文提取+展示+AI 引用)；学科 LLM 自动分类 v2(9 学科,按知识点判)；JWT 30 天；迁移到飞牛 NAS(Docker Compose) |
 | **v37** | 2026-09-06 | Wi-Fi 无 v6 兜底:API base 4 候选探测 fallback + 域名新增 A 记录 `220.187.13.231` |

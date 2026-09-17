@@ -1,100 +1,60 @@
 #!/bin/bash
-# DDNS 自动更新脚本（修正版）
-# 仅在公网IPv4变化时更新，IPv6使用固定值（通过SSH获取服务器实际出口IP）
+# DDNS 自动同步脚本 - 飞牛 NAS v6 出口变化 → 阿里云 AAAA 记录
 #
-# 运行方式：bash scripts/ddns-update.sh
+# 运行方式：cron 每 5 分钟跑一次, 日志在 /tmp/ddns-update.log
 
-set -e
+set -eu
 
-# DNS 记录 ID
-A_RECORD_ID="2097487302061989888"
+NAS_HOST="gpssong@192.168.0.32"
+NAS_PASS="850225sonG"
+DOMAIN="93gushi.com"
+RR="error"
 AAAA_RECORD_ID="2096030127842204672"
-
-# 服务器信息
-SERVER_HOST="gpssong@192.168.0.14"
-SERVER_SSH_PASS="850225song"
+TTL=600
 STATE_FILE="/tmp/ddns-state.json"
+ALOG="/tmp/ddns-update.log"
 
-# 颜色输出
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
+ts() { date '+%Y-%m-%d %H:%M:%S'; }
+log() { echo "[$(ts)] $*" | tee -a "$ALOG" >&2; }
 
-log_info()  { echo -e "${GREEN}[$(date '+%H:%M:%S')] INFO${NC}  $1"; }
-log_warn()  { echo -e "${YELLOW}[$(date '+%H:%M:%S')] WARN${NC}  $1"; }
-log_error() { echo -e "${RED}[$(date '+%H:%M:%S')] ERROR${NC} $1"; }
+# 1. 从飞牛拿当前全局 v6 (去 prefixlen, 取第一个非 fe80)
+CURRENT_V6=$(/opt/homebrew/bin/sshpass -p "$NAS_PASS" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$NAS_HOST" \
+  'ip -6 addr show scope global 2>/dev/null | grep -Eo "inet6 [0-9a-f:]+/" | grep -v fe80 | awk "{print \$2}" | cut -d/ -f1 | head -1' 2>/dev/null || echo "")
 
-# 获取当前公网 IPv4（从本地获取）
-CURRENT_IPV4=$(curl -4 -s --max-time 5 ifconfig.me 2>/dev/null || echo "")
-
-if [ -z "$CURRENT_IPV4" ]; then
-  log_error "无法检测到公网 IPv4 地址"
-  exit 1
-fi
-
-# 从服务器获取 IPv6（服务器直连外网的地址）
-CURRENT_IPV6=$(sshpass -p "$SERVER_SSH_PASS" ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$SERVER_HOST" \
-  "curl -s -m 5 ifconfig.me -6" 2>/dev/null || echo "")
-
-log_info "当前公网 IP: IPv4=$CURRENT_IPV4 IPv6=${CURRENT_IPV6:-无}"
-
-# 检查上次记录的 IP
-LAST_IPV4=""
-if [ -f "$STATE_FILE" ]; then
-  LAST_IPV4=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('ipv4',''))" 2>/dev/null || echo "")
-fi
-
-# 判断是否需要更新
-if [ "$CURRENT_IPV4" = "$LAST_IPV4" ]; then
-  log_info "公网 IPv4 未变化，无需更新 DNS"
+if [ -z "$CURRENT_V6" ]; then
+  log "WARN 飞牛 SSH 取 v6 失败 (NAS 不可达?), 本次跳过"
   exit 0
 fi
 
-# 检查 aliyun CLI
-if ! command -v aliyun &> /dev/null; then
-  log_error "aliyun CLI 未安装，请先安装"
+# 2. 查阿里云当前 AAAA 值
+REMOTE_V6=$(/opt/homebrew/bin/aliyun alidns DescribeDomainRecords --profile dns \
+  --DomainName "$DOMAIN" --PageSize 100 2>/dev/null \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); [print(r['Value']) for r in d.get('DomainRecords',{}).get('Record',[]) if r.get('Type')=='AAAA' and r.get('RR')=='error']" 2>/dev/null \
+  | head -1 || echo "")
+
+if [ -z "$REMOTE_V6" ]; then
+  log "WARN 阿里云查不到 AAAA 记录 (CLI 异常?), 本次跳过"
+  exit 0
+fi
+
+# 3. 对比
+if [ "$CURRENT_V6" = "$REMOTE_V6" ]; then
+  log "OK 一致: 飞牛 v6=$CURRENT_V6 == 阿里云 AAAA, 无需更新"
+  echo "{\"v6\":\"$CURRENT_V6\",\"synced_at\":\"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\"}" > "$STATE_FILE"
+  exit 0
+fi
+
+log "INFO 不一致: 飞牛 v6=$CURRENT_V6, 阿里云 AAAA=$REMOTE_V6, 开始更新"
+if /opt/homebrew/bin/aliyun alidns UpdateDomainRecord --profile dns \
+  --RecordId "$AAAA_RECORD_ID" \
+  --RR "$RR" --Type AAAA \
+  --Value "$CURRENT_V6" --TTL "$TTL" \
+  >> "$ALOG" 2>&1; then
+  log "OK AAAA 已更新 → $CURRENT_V6"
+else
+  log "ERROR aliyun UpdateDomainRecord 失败, 详情看 $ALOG"
   exit 1
 fi
 
-log_info "开始更新 DNS A 记录 → $CURRENT_IPV4"
-
-# 更新 A 记录
-if aliyun alidns update-domain-record \
-  --record-id "$A_RECORD_ID" \
-  --type A --rr error \
-  --value "$CURRENT_IPV4" --ttl 600 \
-  > /dev/null 2>&1; then
-  log_info "✅ A 记录更新成功"
-else
-  log_warn "⚠️  A 记录更新失败（可能已最新或网络问题）"
-fi
-
-# 如果 IPv6 有变化，也更新 AAAA 记录
-if [ -n "$CURRENT_IPV6" ]; then
-  LAST_IPV6=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('ipv6',''))" 2>/dev/null || echo "")
-  
-  if [ "$CURRENT_IPV6" != "$LAST_IPV6" ]; then
-    log_info "更新 DNS AAAA 记录 → $CURRENT_IPV6"
-    if aliyun alidns update-domain-record \
-      --record-id "$AAAA_RECORD_ID" \
-      --type AAAA --rr error \
-      --value "$CURRENT_IPV6" --ttl 600 \
-      > /dev/null 2>&1; then
-      log_info "✅ AAAA 记录更新成功"
-    else
-      log_warn "⚠️  AAAA 记录更新失败（可能已最新或网络问题）"
-    fi
-  fi
-fi
-
-# 保存状态
-cat > "$STATE_FILE" << STATE_EOF
-{
-  "ipv4": "$CURRENT_IPV4",
-  "ipv6": "${CURRENT_IPV6}",
-  "updated_at": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-}
-STATE_EOF
-
-log_info "✅ DDNS 更新完成"
+echo "{\"v6\":\"$CURRENT_V6\",\"synced_at\":\"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\"}" > "$STATE_FILE"
+log "OK 完成"
