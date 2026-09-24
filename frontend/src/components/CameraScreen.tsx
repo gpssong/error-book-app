@@ -19,6 +19,7 @@ import { Icon } from '@/components/Icons'
 import DrawingCanvas from '@/components/DrawingCanvas'
 import LatexPreview from '@/components/LatexPreview'
 import RegionSelector from '@/components/RegionSelector'
+import SplitPageScreen from '@/components/SplitPageScreen'
 import type { Subject } from '@/stores/api'
 import api from '@/stores/api'
 import { preprocessImage } from '@/utils/imagePreprocess'
@@ -26,7 +27,8 @@ import { cropImage, type Region } from '@/utils/imageCrop'
 import 'katex/dist/katex.min.css'
 
 type Screen = 'dashboard' | 'childManage' | 'errorList' | 'errorDetail' | 'printPreview' | 'camera'
-type Phase = 'viewfinder' | 'annotating' | 'captured' | 'regionSelect' | 'recognizing' | 'result' | 'batchResult'
+type Phase = 'viewfinder' | 'annotating' | 'captured' | 'regionSelect' | 'recognizing' | 'result' | 'batchResult' | 'splitPage'
+type CameraMode = '拍题' | '作业' | '试卷' | '跨页'
 
 interface Props {
   onNavigate: (screen: Screen) => void
@@ -36,7 +38,7 @@ export default function CameraScreen({ onNavigate }: Props) {
   const { activeChildId, createError } = useApp()
   const [cameraPhase, setCameraPhase] = useState<Phase>('viewfinder')
   const [flashOn, setFlashOn] = useState(false)
-  const [cameraMode, setCameraMode] = useState<'拍题' | '作业' | '试卷'>('拍题')
+  const [cameraMode, setCameraMode] = useState<CameraMode>('拍题')
 
   // 图片相关
   const [capturedImageUrl, setCapturedImageUrl] = useState<string>('')
@@ -155,6 +157,11 @@ export default function CameraScreen({ onNavigate }: Props) {
           imageUrl: r.croppedUrl || (recognizedImageBase64 || capturedImageUrl),
           imageBase64: r.croppedUrl || undefined,
           handwritingSvg: existingHandwritingSvg || undefined,
+          // v40: 跨页拍题标记(从 splitPage phase 进来时,splitGroupId 已被赋值)
+          isSplitPage: !!splitGroupId,
+          pageIndex: splitGroupId ? 1 : 0,
+          totalPages: splitGroupId ? 2 : 0,
+          splitGroupId: splitGroupId || '',
         })
         if (r.ok) successCount++
       }
@@ -183,7 +190,28 @@ export default function CameraScreen({ onNavigate }: Props) {
     }
   }
 
-  // 单题旧入口保留 — 兼容只拍照 1 题的用户(全图直接识别)
+  // ─── 跨页拍题(v40) ────────────────────────────────────────────────────────────
+  // 跨页拍题入库时挂的 splitGroupId,每次进入 splitPage phase 重新生成
+  const [splitGroupId, setSplitGroupId] = useState<string>('')
+  const handleSplitComplete = (stitchedDataUrl: string, _pageCount: number) => {
+    // 拼接图塞回 captured 槽位,直接进 regionSelect 走原有流水线
+    setCapturedImageUrl(stitchedDataUrl)
+    setRecognizedImageBase64('')
+    setExistingHandwritingSvg('')
+    setCameraPhase('regionSelect')
+  }
+  const handleSplitCancel = () => {
+    setSplitGroupId('')
+    setCameraMode('拍题')
+    setCameraPhase('viewfinder')
+  }
+  const enterSplitTab = () => {
+    setCameraMode('跨页')
+    setSplitGroupId(`split_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`)
+    setCameraPhase('splitPage')
+  }
+
+  // 单题旧入口保留 — 兼容只拍照 1 题的用户(全图直接识别)。当前主路径已不调用,留作回归兜底
   const handleRecognizeAll = async () => {
     await handleRegionsConfirm([{ x: 0, y: 0, w: 1, h: 1 }])
   }
@@ -250,10 +278,16 @@ export default function CameraScreen({ onNavigate }: Props) {
           </div>
 
           <div className="flex justify-center gap-2 mb-3 z-10">
-            {(['拍题', '作业', '试卷'] as const).map((m) => (
+            {(['拍题', '作业', '试卷', '跨页'] as const).map((m) => (
               <button
                 key={m}
-                onClick={() => setCameraMode(m)}
+                onClick={() => {
+                  if (m === '跨页') {
+                    enterSplitTab()
+                  } else {
+                    setCameraMode(m)
+                  }
+                }}
                 className="text-xs font-bold px-4 py-1.5 rounded-full transition-all"
                 style={cameraMode === m
                   ? { background: '#2563EB', color: '#fff' }
@@ -285,19 +319,22 @@ export default function CameraScreen({ onNavigate }: Props) {
           <div className="px-6 pt-6 pb-10 flex items-center justify-between">
             <button
               onClick={handleGallerySelect}
-              className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-white/20 flex items-center justify-center bg-white/10"
+              disabled={cameraMode === '跨页'}
+              className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-white/20 flex items-center justify-center bg-white/10 disabled:opacity-30"
             >
               <Icon.ImagePick />
             </button>
             <button
               onClick={handleCameraCapture}
-              className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center active:scale-90 transition-transform"
+              disabled={cameraMode === '跨页'}
+              className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center active:scale-90 transition-transform disabled:opacity-30"
             >
               <div className="w-16 h-16 rounded-full bg-white" />
             </button>
             <button
               onClick={handleGallerySelect}
-              className="w-14 h-14 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center"
+              disabled={cameraMode === '跨页'}
+              className="w-14 h-14 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center disabled:opacity-30"
             >
               <span className="text-xs font-bold text-white/95">相册</span>
             </button>
@@ -382,6 +419,14 @@ export default function CameraScreen({ onNavigate }: Props) {
           imageUrl={recognizedImageBase64 || capturedImageUrl}
           onConfirm={handleRegionsConfirm}
           onCancel={() => setCameraPhase('captured')}
+        />
+      )}
+
+      {/* ── SplitPage phase(v40 跨页拍题) ── */}
+      {cameraPhase === 'splitPage' && (
+        <SplitPageScreen
+          onComplete={handleSplitComplete}
+          onCancel={handleSplitCancel}
         />
       )}
 

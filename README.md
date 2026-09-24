@@ -289,6 +289,7 @@ crontab -l | grep ddns
 
 | 版本 | 日期 | 主要变化 |
 |---|---|---|
+| **v40** | 2026-09-24 | 跨页拍题模式:viewfinder 加「跨页」tab → 拍2张自动垂直拼接(滑块手动对齐)→ 单条错题入库。后端 `ErrorQuestion` schema 加 4 字段(`isSplitPage`/`pageIndex`/`totalPages`/`splitGroupId`)。先发版后端(否则 mongoose strict:true 静默丢字段),再发版前端。APK: `error-book-v40-split-page.apk` |
 | **v39** | 2026-09-17 | 后端 MongoDB 竞态加固:mongo healthcheck + backend `service_healthy` 门控(治本);backend 加运行期自愈(`ensureMongoReconnect` 后台重连 + `watchDisconnection` 断连自愈 + `isMemoryDB` 语义收紧),mongo 启动竞态/中途断连时静默切回,不再需手动 restart |
 | **v38.2** | 2026-09-17 | DDNS 自动同步:飞牛 v6 动态租约变化 → 每5分钟 cron 比对刷新阿里云 AAAA 记录(脚本 `scripts/ddns-update.sh`,全路径 + `--profile dns` + 根域 `93gushi.com`) |
 | **v38.1** | 2026-09-14 | 登录态持久化(SharedPreferences 双写+启动回填);APK Preferences 插件链接修复(Kotlin JVM 21→17 + 强制 aar 产出);飞牛 nginx 挂载加固(healthcheck + 部署后 nginx -s reload) |

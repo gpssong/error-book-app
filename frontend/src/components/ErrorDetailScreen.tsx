@@ -220,6 +220,15 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
             <div className="flex items-center gap-2 mt-0.5">
               <SubjectTag subject={err.subject} />
               <span className="text-[10px] text-slate-400">{err.date}</span>
+              {err.isSplitPage && (
+                <span
+                  className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                  style={{ background: '#F3E8FF', color: '#7C3AED' }}
+                  title={`跨页题（${err.totalPages ?? 2} 页拼接）`}
+                >
+                  📄 跨页题 {err.totalPages ? `${err.totalPages} 页` : ''}
+                </span>
+              )}
             </div>
           </div>
         </div>

@@ -125,6 +125,11 @@ export interface ErrorItem {
     analyzedAt: string | null
   }
   similarQuestions?: SimilarQuestion[]
+  // v40: 跨页拍题标记（同一道题由 2 张拍图拼成，单条记录 + splitGroupId 关联）
+  isSplitPage?: boolean
+  pageIndex?: number
+  totalPages?: number
+  splitGroupId?: string
   createdAt: string
   updatedAt: string
 }

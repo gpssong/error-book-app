@@ -52,6 +52,11 @@ export const errorQuestionSchema = new mongoose.Schema(
       answer: String,
       answerFolded: { type: Boolean, default: true },
     }],
+    // v40: 跨页拍题标记 — 自动垂直拼接 2 张拍图后入库,单条错题挂拼接图
+    isSplitPage:  { type: Boolean, default: false },
+    pageIndex:    { type: Number,  default: 0 },   // 该条在跨页题中的序号(单条入库下固定为 1)
+    totalPages:   { type: Number,  default: 0 },   // 拼接时实际页数(典型为 2)
+    splitGroupId: { type: String,  default: '' },  // 跨页会话 id,便于未来多条聚合
   },
   { timestamps: true }
 )
@@ -89,6 +94,11 @@ export function createMemoryError(payload, childId) {
       analyzedAt: null,
     },
     similarQuestions: [],
+    // v40: 跨页拍题标记 — 透传自前端
+    isSplitPage:  payload.isSplitPage ?? false,
+    pageIndex:    payload.pageIndex ?? 0,
+    totalPages:   payload.totalPages ?? 0,
+    splitGroupId: payload.splitGroupId ?? '',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }

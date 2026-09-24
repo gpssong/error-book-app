@@ -1,5 +1,66 @@
 # Changelog
 
+## v40 (2026-09-24) - 跨页/翻面拍题模式
+
+### 背景
+
+学生拍题时题目正好在两页交界处,或作业本翻面时一道题横跨上下两个半页。一次拍照没法拍齐,旧版只能拍两次 → OCR 两次 → 入库两条独立错题。讲题时要在两个详情页翻,且后半段题没题号衔接,复习体验断裂。
+
+本次新增「跨页拍题」模式:拍 2 张 → App 自动垂直拼接 → 拖滑块手动对齐 → **只入库 1 条**错题(挂拼接图)。
+
+### 新增
+
+#### 1. 前端工具与组件
+
+| 文件 | 作用 |
+|---|---|
+| `frontend/src/utils/imageStitch.ts` | 纯函数 `stitchImagesVertically(img1, img2, {dropTopRatio})`,canvas drawImage 9 参数重载 + JPEG q=0.82 输出 |
+| `frontend/src/components/SplitPageScreen.tsx` | 跨页拍题 UI 容器,自管子状态机 `idle → firstReady → aligning → confirmed`,滑块 0..0.6 控制 `dropTopRatio` |
+| `frontend/src/components/ErrorDetailScreen.tsx` | 标题旁新增「📄 跨页题 N 页」徽章 |
+
+#### 2. `CameraScreen` 接入
+
+- `Phase` 类型扩 `splitPage`;`cameraMode` 扩 `跨页`
+- 顶部 tab 加第 4 项「跨页」,点击直接进 `SplitPageScreen`
+- 「跨页」tab 时 viewfinder 拍照/相册按钮 disabled(避免误触重复触发)
+- 拼接图塞回 `capturedImageUrl` → 进 `regionSelect` 走原有流水线,识别/入库零感知
+- 入库时挂 4 字段:`isSplitPage / pageIndex / totalPages / splitGroupId`
+
+#### 3. 后端 schema
+
+`backend/src/schemas/errorQuestion.js` mongoose schema 加 4 字段(`default: false/0/0/''`),`createMemoryError` 同步透传。
+
+### 部署顺序(关键!)
+
+**必须先发版后端,再发版前端**:mongoose 默认 `strict:true`,未声明字段会被静默丢弃。先发版前端会让 `isSplitPage` 永远是 `undefined`。
+
+### 文件
+
+| 文件 | 改动 |
+|---|---|
+| `frontend/src/utils/imageStitch.ts` | **新增** |
+| `frontend/src/components/SplitPageScreen.tsx` | **新增** |
+| `frontend/src/components/CameraScreen.tsx` | Phase 扩 splitPage + tab 加「跨页」+ 拍照按钮 disabled + handleRegionsConfirm 入库带 4 字段 |
+| `frontend/src/components/ErrorDetailScreen.tsx` | 跨页题徽章 |
+| `frontend/src/stores/api.ts` | ErrorItem 4 字段可选 |
+| `backend/src/schemas/errorQuestion.js` | mongoose schema + createMemoryError 4 字段 |
+| `docker-compose.yml` | 无改动(沿用 v39 mongo healthcheck 门控) |
+
+### 部署
+
+- 后端:scp + docker build + compose up -d backend(mongo healthcheck 触发 `Waiting → Healthy → backend Started`)
+- 前端:pnpm build + scp + nginx reload
+- `/api/health` 报 `db: mongodb`,`/assets/index-pfIr_qI3.js` 200 (604 KB)
+- APK: `error-book-v40-split-page.apk` (5.8 MB) → 飞牛同步盘
+
+### 已知限制
+
+- 仅支持 2 页拼接;≥3 页需多次拼接后合并(未来 v41 可基于 `splitGroupId` 聚合)
+- 不保留拼接前的两张原图(节省存储)
+- 滑块手动对齐是简化方案,歪斜/低对比场景体验一般 — 90% 拍齐的作业场景够用
+
+---
+
 ## v39 (2026-09-17) - 后端 MongoDB 竞态加固(启动门控 + 运行期自愈)
 
 ### 背景
