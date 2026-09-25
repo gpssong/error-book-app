@@ -12,6 +12,7 @@ import { Icon, SubjectTag } from '@/components/Icons'
 import LatexPreview from '@/components/LatexPreview'
 import type { Subject } from '@/stores/api'
 import type { SimilarQuestion } from '@/stores/api'
+import { sliceSimilarQuestions, SIMILAR_COUNT_OPTIONS, DEFAULT_SIMILAR_COUNT } from '@/utils/sliceSimilarQuestions'
 import { Capacitor } from '@capacitor/core'
 import { Printer } from '@dimer47/capacitor-plugin-printer'
 
@@ -28,6 +29,8 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
   const [selectedIds, setSelectedIds] = useState<string[]>(pendingPrintIds)
   // v22: 含参考答案开关(默认关,打印场景用户主要是给学生做,不要答案)
   const [showAnswer, setShowAnswer] = useState(false)
+  // v42: 同类练习题数量(每道题统一控制; 默认 4, 选项 0/2/4/6/8; 0=不打印)
+  const [similarCount, setSimilarCount] = useState<number>(DEFAULT_SIMILAR_COUNT)
   // v30: 随机练习模式
   const [isPracticeMode, setIsPracticeMode] = useState(!!pendingPracticeQuestions.length)
   const practiceQuestions = pendingPracticeQuestions.length > 0 ? pendingPracticeQuestions : []
@@ -152,6 +155,28 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
             </button>
           </div>
         </div>
+
+        {/* v42: 同类练习题数量选择器(每题统一控制; 仅错题模式生效, 随机练习模式不显示) */}
+        {!isPracticeMode && (
+          <div className="flex items-center justify-between mt-3">
+            <span className="text-[10px] text-slate-400 font-600 shrink-0">每题同类题</span>
+            <div className="flex items-center gap-1">
+              {SIMILAR_COUNT_OPTIONS.map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setSimilarCount(n)}
+                  className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all"
+                  style={similarCount === n
+                    ? { background: '#2563EB', color: '#fff' }
+                    : { background: '#F1F5F9', color: '#64748B' }
+                  }
+                >
+                  {n === 0 ? '不打印' : `${n} 道`}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* v19: 题目选择区 - 用户可调整要打印的错题 */}
@@ -262,6 +287,8 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
               : printErrors.map((err, idx) => {
                   const answer = getAnswer(err)
                   const similar = err.similarQuestions || []
+                  // v42: 用户可选同类题数量(默认 4); 0=不打印, 不足则取全部并提示
+                  const slice = sliceSimilarQuestions(similar, similarCount)
                   return (
                     <div key={err.id} className="border border-slate-200 rounded-xl overflow-hidden print:break-inside-avoid print:overflow-visible">
                       <div className="px-2 py-1.5 flex items-center justify-between" style={{ background: '#F8FAFC' }}>
@@ -302,14 +329,14 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
                         )}
                       </div>
 
-                      {/* 同类练习区(v16) */}
-                      {similar.length > 0 && (
+                      {/* 同类练习区(v16; v42 改为按用户选数量切片, sliceSimilarQuestions 纯函数兜底) */}
+                      {slice.shown.length > 0 && (
                         <div className="border-t-2 border-dashed border-blue-200 px-2 py-2" style={{ background: '#F0F9FF' }}>
                           <div className="flex items-center gap-1 mb-1.5">
-                            <span className="text-[9px] font-black text-blue-600">📚 同类练习 · {similar.length} 题</span>
+                            <span className="text-[9px] font-black text-blue-600">📚 同类练习 · {slice.shown.length} 题</span>
                           </div>
                           <div className={`grid ${printLayout === '2列' ? 'grid-cols-1 gap-2' : 'grid-cols-2 gap-2'}`}>
-                            {similar.slice(0, printLayout === '2列' ? 2 : 3).map((sq, sIdx) => (
+                            {slice.shown.map((sq, sIdx) => (
                               <div
                                 key={sq.id || sIdx}
                                 className="rounded-lg border border-blue-100 bg-white px-2 py-1.5 print:break-inside-avoid"
@@ -338,10 +365,14 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
                               </div>
                             ))}
                           </div>
-                          {similar.length > (printLayout === '2列' ? 2 : 3) && (
-                            <p className="text-[8px] text-blue-400 italic mt-1">
-                              还有 {similar.length - (printLayout === '2列' ? 2 : 3)} 道同类练习未显示
-                            </p>
+                          {slice.note ? (
+                            <p className="text-[8px] text-blue-400 italic mt-1">{slice.note}</p>
+                          ) : (
+                            slice.hiddenCount > 0 && (
+                              <p className="text-[8px] text-blue-400 italic mt-1">
+                                还有 {slice.hiddenCount} 道同类练习未显示
+                              </p>
+                            )
                           )}
                         </div>
                       )}
@@ -368,7 +399,7 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
             { label: '排版方式', value: printLayout === '2列' ? '两列排版' : '单列排版' },
             { label: '包含参考答案', value: showAnswer ? '是' : '否' },
             { label: isPracticeMode ? '题目来源' : '包含知识点标注', value: isPracticeMode ? 'AI 随机出题' : '是' },
-            { label: isPracticeMode ? '题目数量' : '包含同类练习', value: isPracticeMode ? `${practiceQuestions.length} 道` : '是' },
+            { label: isPracticeMode ? '题目数量' : '同类练习题', value: isPracticeMode ? `${practiceQuestions.length} 道` : similarCount === 0 ? '不打印' : `每题 ${similarCount} 道` },
           ].map((item) => (
             <div key={item.label} className="flex justify-between">
               <span className="text-xs text-slate-500 font-600">{item.label}</span>

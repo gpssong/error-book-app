@@ -1,5 +1,36 @@
 # Changelog
 
+## v42 (2026-09-25) - 打印同类练习题数量可选
+
+### 背景
+
+打印预览页(`PrintPreviewScreen`)每题下方挂的「同类练习」数量被写死:2 列排版固定显示前 2 道、1 列排版固定显示前 3 道(`similar.slice(0, printLayout === '2列' ? 2 : 3)`)。但每道错题共存的同类题是 8 道(后端 `SIMILAR_QUESTION_COUNT=8`),标题却写「同类练习 · 8 题」,实际只渲染 2 道 —— 用户想多打几道同类题练手时,没有任何入口能调。
+
+本次让用户**自选每道题打印的同类题数量**(0=不打印 / 2 / 4 / 6 / 8),默认 4。
+
+### 改动
+
+| 文件 | 作用 |
+|---|---|
+| `frontend/src/utils/sliceSimilarQuestions.ts` (新增) | 纯函数 `sliceSimilarQuestions(questions, select)` + `SIMILAR_COUNT_OPTIONS=[0,2,4,6,8]` + `DEFAULT_SIMILAR_COUNT=4`。集中三条逻辑:选 N 存量 M>N → 显示前 N 道 + 「还有 M-N 道未显示」;M<N → 显示全部 M 道 + 「已显示全部现有 M 道同类题」兜底;select=0 → 空(块不渲染)。纯函数便于单测 |
+| `frontend/src/utils/sliceSimilarQuestions.test.ts` (新增) | vitest 8 用例:覆盖 N<M / N=M / N>M 兜底 / select=0 / 存量 0 / 常量校验 |
+| `frontend/src/components/PrintPreviewScreen.tsx` | 加 `similarCount` state(默认 4)+ 顶部「每题同类题」选择器(0/2/4/6/8 按钮组,仅错题模式);渲染处改用 `sliceSimilarQuestions(similar, similarCount)` 取代写死的 slice;「未显示」提示改成 `slice.hiddenCount`/`slice.note`;打印设置卡加「同类练习题:每题 N 道 / 不打印」 |
+| `frontend/package.json` | devDep 加 `vitest@^5.0.1` + `"test": "vitest run"` script |
+
+### 设计决策
+
+- **P2(装 vitest)而非手测**:逻辑虽是纯函数,但这是项目第一个测试基建,以后 slice/其他纯函数都能复用。`pnpm test` 跑绿(8/8)。
+- **统一控制(选项 A)**:顶部一个选择器管所有错题,而非每题独立,交互最简。
+- **兜底 ① min(N, M)+ 文案**:存量不足时显示全部现有题并提示「已显示全部现有 M 道同类题」,不自动补 AI 生成(补生成会拖慢打印、增加额度消耗)。
+- **默认 4 / 2 列不降级(D1)**:按用户字面意思默认 4,2 列排版可能略挤,需要少就切 2 或不打印。
+- **纯函数前置**:「选数量」与「存量不足」的边界最容易写错,抽成 `sliceSimilarQuestions` 单测 8 条用例先跑红再实现。
+
+### 部署
+
+纯前端改动,无 schema 变更。`pnpm build` → `dist` 覆盖飞牛 `192.168.0.32` nginx 挂载目录 → `nginx -s reload`。线上 `index-Ddu7AdHz.js` 已含「每题同类题 / 不打印 / 已显示全部现有 / 同类练习题」标记,验证通过。
+
+APK: 无(纯 Web 前端功能,走 `http://error.93gushi.com:4040` 即可生效;App 壳无需重出)。
+
 ## v41 (2026-09-25) - 题目插图单独保存 + AI 讲解看图
 
 ### 背景

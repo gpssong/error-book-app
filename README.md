@@ -289,6 +289,7 @@ crontab -l | grep ddns
 
 | 版本 | 日期 | 主要变化 |
 |---|---|---|
+| **v42** | 2026-09-25 | 打印同类练习题数量可选:`PrintPreviewScreen` 顶部加「每题同类题」选择器(0/2/4/6/8,默认4),纯函数 `sliceSimilarQuestions` 集中 slice+兜底文案(min(N,M)),vitest 8 用例。纯前端改动,走域名即生效 |
 | **v41** | 2026-09-25 | 题目插图单独保存 + AI 看图讲解:vision AI 识别时回传 `figureRegion`(插图归一化包围盒)→ 前端在裁剪图内再裁一次得 `figureBase64` 单独入库 → 详情页「📷 题目插图」卡片;AI 讲解/同类题把题图喂进多模态 message。后端 schema + `createMemoryError` 加 `figureBase64`。先发版后端(否则 strict:true 丢字段),再发版前端。APK: `error-book-v41-figure.apk` |
 | **v40** | 2026-09-24 | 跨页拍题模式:viewfinder 加「跨页」tab → 拍2张自动垂直拼接(滑块手动对齐)→ 单条错题入库。后端 `ErrorQuestion` schema 加 4 字段(`isSplitPage`/`pageIndex`/`totalPages`/`splitGroupId`)。先发版后端(否则 mongoose strict:true 静默丢字段),再发版前端。APK: `error-book-v40-split-page.apk` |
 | **v39** | 2026-09-17 | 后端 MongoDB 竞态加固:mongo healthcheck + backend `service_healthy` 门控(治本);backend 加运行期自愈(`ensureMongoReconnect` 后台重连 + `watchDisconnection` 断连自愈 + `isMemoryDB` 语义收紧),mongo 启动竞态/中途断连时静默切回,不再需手动 restart |
