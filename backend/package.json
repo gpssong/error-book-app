@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch src/index.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test": "vitest run"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -16,5 +17,8 @@
     "mongoose": "^8.10.0",
     "multer": "^1.4.5-lts.1",
     "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.1"
   }
 }
