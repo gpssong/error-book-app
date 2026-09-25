@@ -310,8 +310,8 @@ export default function SplitPageScreen({ onComplete, onCancel, preprocessOpts }
 interface CapturePromptProps {
   title: string
   hint: string
-  cameraInputRef: React.RefObject<HTMLInputElement>
-  galleryInputRef: React.RefObject<HTMLInputElement>
+  cameraInputRef: React.RefObject<HTMLInputElement | null>
+  galleryInputRef: React.RefObject<HTMLInputElement | null>
   onRetake?: () => void
   retakeLabel?: string
 }

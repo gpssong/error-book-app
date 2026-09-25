@@ -59,7 +59,7 @@ function startBaseProbe() {
         }),
     ),
   )
-    .then((winner) => {
+    .then((winner: string) => {
       if (winner !== _activeBase) {
         console.log(`[API] fallback ${_activeBase} → ${winner}`)
         _activeBase = winner
