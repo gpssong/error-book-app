@@ -1,8 +1,10 @@
-# 错题本 App (v42)
+# 错题本 App (v43)
 
 多子女错题本应用，支持 **拍照识题 + 题目插图单独保存 + AI讲解(看图) + 跨页拍题 + 手写批注 + 错题管理 + 打印同类题数量可选 + 多用户账号隔离 + 语文原文提取 + 学科 LLM 自动分类 + 登录态持久化**。
 
-**最新版本**: `error-book-v42-similar-count.apk`
+**工程基建**: 前后端测试(vitest)+ ESLint + GitHub Actions CI + `tsc` 门禁(见「开发/测试/CI」章节)。
+
+**最新版本**: `error-book-v42-similar-count.apk`(v43 为工程加固,不重新出 APK)
 **线上地址**: http://error.93gushi.com:4040
 **内网直连**: http://192.168.0.32:4040(飞牛 NAS 局域网)
 
@@ -37,9 +39,11 @@ error-book-app/
 │       ├── services/
 │       │   ├── textin.js       # TextIn /v2/recognize 封装
 │       │   └── minimax.js      # MiniMax-M3 + Agnes 文本合并
+│       ├── pipeline/
+│       │   └── textExtract.js  # ⭐ OCR 启发式提取(trimToFirstQuestion/extractTitleAndKP, 可测纯函数)
 │       └── utils/
 │           ├── jsonParse.js    # LLM 返回 JSON 容错解析
-│           └── latexNormalize.js  # ⭐ LaTeX 后处理(unicode→命令/反斜杠修复)
+│           ├── latexNormalize.js  # ⭐ LaTeX 后处理(unicode→命令/反斜杠修复)
 ├── frontend/                   # React 前端
 │   └── src/
 │       ├── App.tsx
@@ -289,6 +293,7 @@ crontab -l | grep ddns
 
 | 版本 | 日期 | 主要变化 |
 |---|---|---|
+| **v43** | 2026-09-25 | 工程加固批次(非新功能, 不影响线上产物): 修 7 处 tsc 错误 + `build` 加 `tsc --noEmit` 门禁; 后端装 vitest/supertest + 42 条单测(`jsonParse`/`latexNormalize`/`auth`/`textExtract`); `ocr.js` 启发式抽到 `pipeline/textExtract.js`; 后端 ESLint(flat config, 0 error); GitHub Actions CI(backend lint+test / frontend typecheck+test+build)。产物 chunk 名不变 `index-C54h8FJ4.js` |
 | **v42** | 2026-09-25 | 打印同类练习题数量可选:`PrintPreviewScreen` 顶部「每题同类题」改为 `<input type=number min=0 max=8>` 自主输入(默认4,失焦钳位0–8)+「不打印」按钮;纯函数 `sliceSimilarQuestions` 集中 slice+兜底文案(min(N,M)),vitest 8 用例。纯前端改动,APK 已重出 `error-book-v42-similar-count.apk` |
 | **v41** | 2026-09-25 | 题目插图单独保存 + AI 看图讲解:vision AI 识别时回传 `figureRegion`(插图归一化包围盒)→ 前端在裁剪图内再裁一次得 `figureBase64` 单独入库 → 详情页「📷 题目插图」卡片;AI 讲解/同类题把题图喂进多模态 message。后端 schema + `createMemoryError` 加 `figureBase64`。先发版后端(否则 strict:true 丢字段),再发版前端。APK: `error-book-v41-figure.apk` |
 | **v40** | 2026-09-24 | 跨页拍题模式:viewfinder 加「跨页」tab → 拍2张自动垂直拼接(滑块手动对齐)→ 单条错题入库。后端 `ErrorQuestion` schema 加 4 字段(`isSplitPage`/`pageIndex`/`totalPages`/`splitGroupId`)。先发版后端(否则 mongoose strict:true 静默丢字段),再发版前端。APK: `error-book-v40-split-page.apk` |
@@ -336,7 +341,41 @@ crontab -l | grep ddns
 - 多题识别时按"4 选项自动切题"
 - 多账号错题本独立存储（已实现 ownerId 隔离，可加切换 UI）
 
-## 测试
+## 开发 / 测试 / CI
+
+### 测试
+
+```bash
+# 后端测试(42 条:jsonParse/latexNormalize/auth/textExtract)
+cd backend && pnpm test
+
+# 前端测试(8 条:sliceSimilarQuestions)
+cd frontend && pnpm test
+
+# 前端类型检查(quality gate, build 前会自动跑)
+cd frontend && pnpm typecheck
+
+# 后端 lint(0 error / 少量 unused-var warning)
+cd backend && pnpm lint
+```
+
+### GitHub Actions CI
+
+`.github/workflows/ci.yml` 每次 push / PR 自动跑两个 job:
+
+- **backend**:`pnpm install --frozen-lockfile` → `pnpm lint` → `pnpm test`
+- **frontend**:`pnpm install --frozen-lockfile` → `pnpm typecheck` → `pnpm test` → `pnpm build`
+
+pnpm 10 + Node 20,缓存 pnpm-lock.yaml。CI 红了看 Actions 日志调 workflow,逻辑本机已全绿。
+
+### 测试覆盖范围(v43 起)
+
+| 层 | 覆盖 | 说明 |
+|---|---|---|
+| 纯函数 | `extractJSON` / `normalizeLatex` / `trimToFirstQuestion` / `extractTitleAndKP` / `sliceSimilarQuestions` | 无 IO, 快且稳, 断言值实跑核对 |
+| 路由 | `POST /auth/register` / `POST /auth/login` | 内存模式(`USE_MEMORY_DB=true`)+ 手动挂 `express.json()`, 驱动真实分支零 Mongo |
+
+### 线上验证
 
 ```bash
 # 验证后端健康(飞牛 v6)
@@ -349,6 +388,7 @@ curl -6 -s 'http://[240e:390:88f6:c681::3f3]:4040/api/ocr/status'
 # 3. 上传图片 → 拿到 textContent
 # 4. 创建错题 (POST /api/errors)
 ```
+
 
 ## 已知坑
 

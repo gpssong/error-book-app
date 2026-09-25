@@ -1,5 +1,36 @@
 # Changelog
 
+## v43 (2026-09-25) - 工程加固批次(测试基建 + 质量门禁 + CI)
+
+### 背景
+
+项目从 v42 起功能已很稳定,但工程基建有空洞:前端 `vite build` 不跑类型检查(7 处 tsc 错一直没拦住)、后端 0 测试、无 lint、无 CI。本次一次性补齐,目标是**让质量门禁真正生效 + 核心纯函数/路由行为有测试兜底**。非新功能,不影响线上行为(产物 chunk 名不变 `index-C54h8FJ4.js`,纯编译期/测试基建)。
+
+### 改动
+
+| 类别 | 内容 |
+|---|---|
+| **前端类型门禁** | 修 7 处 tsc 错误:`@types/katex` 补声明、`SplitPageScreen` ref 类型改 `RefObject<HTMLInputElement\|null>`(React 19)、`api.ts` `Promise.any` 的 `winner: string`、tsconfig `target/lib` ES2020→**ES2021**。`package.json` 新增 `typecheck` 脚本,`build` 改 `tsc --noEmit && vite build` |
+| **后端测试基建** | 装 `vitest` + `supertest`,`"test": "vitest run"` 脚本 |
+| **后端单测(42 条)** | `utils/jsonParse.test.js`(8:extractJSON 直 JSON/围栏/首块/嵌套/坏块跳过/空值)+ `utils/latexNormalize.test.js`(15:unicode→LaTeX/反斜杠修复/`$`闭合/幂等/边界)+ `routes/auth.test.js`(10:注册必填/409/密码长度/邮箱格式、登录 username-or-email/大小写/401 文案/400)+ `pipeline/textExtract.test.js`(9:trimToFirstQuestion/extractTitleAndKP) |
+| **OCR 流水线拆模块** | `ocr.js` 里两个启发式纯函数 `trimToFirstQuestion` / `extractTitleAndKP` + `KP_KEYWORDS` 抽到 `src/pipeline/textExtract.js`(可独立单测),路由 `import` 复用,**零行为变化** |
+| **ESLint** | 后端装 `eslint@9` + `@eslint/js`,`eslint.config.js` flat config(0 error / 9 warning,存量 regex 无害转义降 off、Node 内置 `fetch/AbortSignal` 补 globals)。`db.js` 去掉无意义的 `try{...}catch{throw}` |
+| **GitHub Actions CI** | `.github/workflows/ci.yml`:backend job(lint + test)+ frontend job(typecheck + test + build),pnpm 10 + node 20 |
+| **文档/清理** | `index.js` 误导注释修正(默认 MongoDB、`USE_MEMORY_DB=true` 才走内存);删本地 `apk/` 旧产物(105MB);`package.json` 依赖归位(修 pnpm 误建根 package.json) |
+
+### 设计决策
+
+- **纯函数先行**:测试只碰**无 IO 的纯函数**(`extractJSON`/`normalizeLatex`/`trimToFirstQuestion`/`extractTitleAndKP`)+ 内存模式路由(auth),不碰 MongoDB/网络,快且稳。`latexNormalize` 断言值先用 `node -e` 实跑核对,不拍脑袋。
+- **auth 走内存模式**:测试顶部 `process.env.USE_MEMORY_DB='true'` + 只 import 裸 router(手动挂 `express.json()`),驱动 register/login 的真实分支,零 Mongo 依赖。
+- **ESLint 务实不阻塞**:存量代码 35 条 `no-useless-escape`(正则里无害转义)、1 条无意义 try/catch,选择降 off / 修掉真 bug,而非一次报几百条。CI 对 lint 用「0 error 放行、warning 提示」。
+- **CI 模拟验证**:GitHub Actions 本地跑不了,用 `pnpm install --frozen-lockfile` + 逐步 `lint/test/typecheck/build` 在本机复现每一步,全绿再 push。
+
+### 验证
+
+- 后端 `pnpm test` **42/42** + `pnpm lint` **0 error**(9 warning 均 unused var)
+- 前端 `pnpm test` **8/8** + `pnpm typecheck` 通过 + `pnpm build` 通过(产物 `index-C54h8FJ4.js`)
+- 纯工程加固,**不重新出 APK / 不重新部署**(线上 v42 已正确)
+
 ## v42 (2026-09-25) - 打印同类练习题数量可选(0–8 自主输入)
 
 ### 背景
