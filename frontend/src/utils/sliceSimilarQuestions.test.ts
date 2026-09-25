@@ -8,8 +8,8 @@ function fakeQuestions(n: number): SimilarQuestion[] {
 }
 
 describe('SIMILAR_COUNT_OPTIONS / DEFAULT', () => {
-  it('选项包含 0/2/4/6/8', () => {
-    expect(SIMILAR_COUNT_OPTIONS).toEqual([0, 2, 4, 6, 8])
+  it('选项包含 0/2/3/4/6/8', () => {
+    expect(SIMILAR_COUNT_OPTIONS).toEqual([0, 2, 3, 4, 6, 8])
   })
   it('默认值是 4', () => {
     expect(DEFAULT_SIMILAR_COUNT).toBe(4)

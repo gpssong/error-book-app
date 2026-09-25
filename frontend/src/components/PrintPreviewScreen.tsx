@@ -12,7 +12,7 @@ import { Icon, SubjectTag } from '@/components/Icons'
 import LatexPreview from '@/components/LatexPreview'
 import type { Subject } from '@/stores/api'
 import type { SimilarQuestion } from '@/stores/api'
-import { sliceSimilarQuestions, SIMILAR_COUNT_OPTIONS, DEFAULT_SIMILAR_COUNT } from '@/utils/sliceSimilarQuestions'
+import { sliceSimilarQuestions, DEFAULT_SIMILAR_COUNT } from '@/utils/sliceSimilarQuestions'
 import { Capacitor } from '@capacitor/core'
 import { Printer } from '@dimer47/capacitor-plugin-printer'
 
@@ -29,8 +29,10 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
   const [selectedIds, setSelectedIds] = useState<string[]>(pendingPrintIds)
   // v22: 含参考答案开关(默认关,打印场景用户主要是给学生做,不要答案)
   const [showAnswer, setShowAnswer] = useState(false)
-  // v42: 同类练习题数量(每道题统一控制; 默认 4, 选项 0/2/4/6/8; 0=不打印)
+  // v42: 同类练习题数量(每道题统一控制; 用户自主输入, 默认 4; 0=不打印)
   const [similarCount, setSimilarCount] = useState<number>(DEFAULT_SIMILAR_COUNT)
+  // 输入框用字符串暂存, 避免 "01" 这类前导零被数字态吞掉; 提交时解析
+  const [similarCountInput, setSimilarCountInput] = useState<string>(String(DEFAULT_SIMILAR_COUNT))
   // v30: 随机练习模式
   const [isPracticeMode, setIsPracticeMode] = useState(!!pendingPracticeQuestions.length)
   const practiceQuestions = pendingPracticeQuestions.length > 0 ? pendingPracticeQuestions : []
@@ -156,24 +158,45 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
           </div>
         </div>
 
-        {/* v42: 同类练习题数量选择器(每题统一控制; 仅错题模式生效, 随机练习模式不显示) */}
+        {/* v42: 同类练习题数量(用户自主输入; 仅错题模式生效, 随机练习模式不显示) */}
         {!isPracticeMode && (
           <div className="flex items-center justify-between mt-3">
             <span className="text-[10px] text-slate-400 font-600 shrink-0">每题同类题</span>
-            <div className="flex items-center gap-1">
-              {SIMILAR_COUNT_OPTIONS.map((n) => (
-                <button
-                  key={n}
-                  onClick={() => setSimilarCount(n)}
-                  className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all"
-                  style={similarCount === n
-                    ? { background: '#2563EB', color: '#fff' }
-                    : { background: '#F1F5F9', color: '#64748B' }
-                  }
-                >
-                  {n === 0 ? '不打印' : `${n} 道`}
-                </button>
-              ))}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => { setSimilarCount(0); setSimilarCountInput('0') }}
+                className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all"
+                style={similarCount === 0
+                  ? { background: '#2563EB', color: '#fff' }
+                  : { background: '#F1F5F9', color: '#64748B' }
+                }
+              >
+                不打印
+              </button>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={8}
+                value={similarCount === 0 ? '' : similarCountInput}
+                onChange={(e) => {
+                  const v = e.target.value
+                  // 允许中间态为空, 失焦时再钳位
+                  setSimilarCountInput(v)
+                  const n = parseInt(v, 10)
+                  setSimilarCount(Number.isFinite(n) && n >= 0 ? n : DEFAULT_SIMILAR_COUNT)
+                }}
+                onBlur={() => {
+                  const n = parseInt(similarCountInput, 10)
+                  const clamped = Number.isFinite(n) ? Math.max(0, Math.min(8, n)) : DEFAULT_SIMILAR_COUNT
+                  setSimilarCountInput(String(clamped))
+                  setSimilarCount(clamped)
+                }}
+                className="w-14 text-center text-xs font-bold px-2 py-1 rounded-lg outline-none border"
+                style={{ borderColor: similarCount === 0 ? '#CBD5E1' : '#2563EB', background: '#F8FAFC' }}
+              />
+              <span className="text-[10px] text-slate-400 font-600">道</span>
             </div>
           </div>
         )}

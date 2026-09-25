@@ -14,7 +14,7 @@ import type { SimilarQuestion } from '@/stores/api'
  */
 
 /** 顶部「同类题 N」选择器的可选值。0=不打印, 8=后端 SIMILAR_QUESTION_COUNT 上限 */
-export const SIMILAR_COUNT_OPTIONS = [0, 2, 4, 6, 8] as const
+export const SIMILAR_COUNT_OPTIONS = [0, 2, 3, 4, 6, 8] as const
 export type SimilarCountOption = (typeof SIMILAR_COUNT_OPTIONS)[number]
 /** 默认每道题打印的同类题数量(P2 D1: 默认 4, 2 列时不自动降级) */
 export const DEFAULT_SIMILAR_COUNT: SimilarCountOption = 4
