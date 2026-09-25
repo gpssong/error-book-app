@@ -1,5 +1,37 @@
 # Changelog
 
+## v41 (2026-09-25) - 题目插图单独保存 + AI 讲解看图
+
+### 背景
+
+识别题目时,题目里的关键示意图(几何立体图 / 物理装置图 / 化学结构 / 折线图等)只活在裁剪进 `imageBase64` 的整题大图里,**没有被单独保存**。孩子复习时只能看文字选项,对不上"哪个面是 A、哪个是 G"(典型:立方体昆虫爬行最短路径题),也看不到装置图。AI 讲题/出同类题时同样看不到图,几何类题讲解失真。
+
+本次让 AI 在识别时额外回传 `figureRegion`(题目插图归一化包围盒),前端据此裁出**题目插图 `figureBase64` 单独入库**,详情页多一张「📷 题目插图」卡片;AI 讲解/同类题也把这张图喂进去,真正"看图"。
+
+### 改动
+
+| 文件 | 作用 |
+|---|---|
+| `backend/src/services/minimax.js` | vision/文本解析 prompt 加 `figureRegion` 规则;`normalizeParsed` 新增 `figureRegion` 字段 + `normalizeFigureRegion` 校验(坐标 clamp、面积 <2% 误判丢弃) |
+| `backend/src/routes/ocr.js` | 4 条返回路径(vision-primary / 低质量 vision-fallback / textin+ai-text / 兜底 vision-fallback)透传 `figureRegion` |
+| `backend/src/schemas/errorQuestion.js` | mongoose schema + `createMemoryError` 加可选 `figureBase64`(默认 `''`) |
+| `backend/src/routes/ai.js` | `callAI` 支持 `figureBase64` 多模态 message;`/analyze` `/similar` 把题图喂进 prompt(模拟模式/无图不受影响) |
+| `frontend/src/stores/api.ts` | `ErrorItem` + `recognizeQuestion`/`analyzeError`/`generateSimilar` 加 `figureBase64`/`figureRegion` 类型 |
+| `frontend/src/components/CameraScreen.tsx` | `handleRegionsConfirm` 用 `parseFigureRegion` + 现成 `cropImage` 在裁剪图内再裁一次得 `figureBase64`,随 `createError` 入库 |
+| `frontend/src/components/ErrorDetailScreen.tsx` | 详情 Tab 渲染「📷 题目插图」卡片(有图才显示);`analyzeError`/`generateSimilar` 带上 `figureBase64` |
+
+### 部署顺序(关键!)
+
+**先发版后端,再发版前端**:`figureBase64` 是新 schema 字段,mongoose `strict:true` 未声明字段会被静默丢弃。本次已按此顺序在飞牛 `192.168.0.32` 完成(后端 3 容器 rebuild+restart → 前端 dist 覆盖 nginx → `nginx -s reload`)。
+
+### 文件
+
+| 文件 | 改动 |
+|---|---|
+| 见上表 | 后端 4 + 前端 3,共 7 个文件 |
+
+APK: `error-book-v41-figure.apk`(前端含新卡片,装到手机即可;识别新题时自动带图入库)
+
 ## v40 (2026-09-24) - 跨页/翻面拍题模式
 
 ### 背景

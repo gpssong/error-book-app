@@ -89,16 +89,30 @@ function buildGradePrompt(grade) {
  * 调用 AI API（支持 OpenAI 兼容格式）
  * 包含降级逻辑：无 API Key 时返回模拟数据
  */
-async function callAI(prompt, systemPrompt = '') {
+async function callAI(prompt, systemPrompt = '', figureBase64 = '') {
   // 模拟模式
   if (!AI_API_KEY || AI_API_KEY === 'sk-placeholder') {
     return getMockAIResponse(prompt)
   }
 
+  // 构造 user message:有题目插图时拼成多模态 content(text + image_url),让视觉模型能"看到"图
+  let userMessage
+  if (figureBase64 && String(figureBase64).length > 200) {
+    userMessage = {
+      role: 'user',
+      content: [
+        { type: 'text', text: `${prompt}\n\n【题目插图】:上方附带的图片是本题的关键示意图(几何图/物理装置/化学结构等),讲解/出题请结合它。` },
+        { type: 'image_url', image_url: { url: figureBase64 } },
+      ],
+    }
+  } else {
+    userMessage = { role: 'user', content: prompt }
+  }
+
   try {
     const messages = [
       ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
-      { role: 'user', content: prompt },
+      userMessage,
     ]
 
     const response = await fetch(`${AI_API_BASE}/chat/completions`, {
@@ -172,7 +186,7 @@ router.use(authMiddleware)
 
 router.post('/analyze', checkDailyLimit({ action: 'ai_analyze' }), async (req, res) => {
   try {
-    const { title, knowledgePoint, subject, textContent, sourceText, childId } = req.body
+    const { title, knowledgePoint, subject, textContent, sourceText, childId, figureBase64 } = req.body
 
     // 反查 child grade (用于讲解更贴近学段)
     let childGrade = null
@@ -189,7 +203,7 @@ router.post('/analyze', checkDailyLimit({ action: 'ai_analyze' }), async (req, r
 题目：${title}
 知识点：${knowledgePoint}
 题目内容：${textContent || '（见图片）'}
-${sourceText ? `\n诗词原文/阅读文章原文：\n${sourceText}\n` : ''}
+${figureBase64 ? `\n题目插图：已在消息中附带本题关键示意图,请结合图片讲解。\n` : ''}${sourceText ? `\n诗词原文/阅读文章原文：\n${sourceText}\n` : ''}
 ${gradePrompt}
 
 请按以下JSON格式返回分析结果（不要有其他文字）：
@@ -200,7 +214,7 @@ ${gradePrompt}
   "answer": "最终答案（简洁准确，如选择题选字母或数值结果）"
 }`
 
-    const result = await callAI(prompt, '你是一位经验丰富的数学老师，擅长分析学生错误并给出清晰的讲解。')
+    const result = await callAI(prompt, '你是一位经验丰富的数学老师，擅长分析学生错误并给出清晰的讲解。', figureBase64)
 
     const parsed = extractJSON(result)
     if (parsed) {
@@ -225,7 +239,7 @@ ${gradePrompt}
 // ─── 生成同类练习题 ────────────────────────────────────────────────────────────
 router.post('/similar', checkDailyLimit({ action: 'ai_similar' }), async (req, res) => {
   try {
-    const { title, knowledgePoint, subject, difficulty = '中等', textContent, sourceText, childId } = req.body
+    const { title, knowledgePoint, subject, difficulty = '中等', textContent, sourceText, childId, figureBase64 } = req.body
 
     // 若传了 childId 且当前有用户登录,反查 child 拿到 grade 注入 prompt
     let childGrade = null
@@ -244,7 +258,7 @@ ${gradePrompt}
 参考原题:
 - 题目标题:${title}
 - 题目内容:${textContent || '(无)'}
-${sourceText ? `- 诗词/阅读原文:\n${sourceText}\n` : ''}
+${figureBase64 ? '- 题目插图:已在消息中附带本题关键示意图,出题时如涉及图形请结合图片结构。\n' : ''}${sourceText ? `- 诗词/阅读原文:\n${sourceText}\n` : ''}
 
 硬性要求：
 - 题目数量必须 = ${SIMILAR_COUNT},少 1 道即视为输出失败
@@ -255,7 +269,7 @@ ${sourceText ? `- 诗词/阅读原文:\n${sourceText}\n` : ''}
 请按以下 JSON 格式返回（不要有其他文字,不要 markdown 代码块,纯 JSON 字符串即可）:
 {"questions":[{"id":"sq1","content":"题目内容","answer":"参考答案"}, ... 共 ${SIMILAR_COUNT} 项]}`
 
-    const result = await callAI(prompt, '你是一位命题专家，擅长根据学段水平生成高质量的同类练习题。')
+    const result = await callAI(prompt, '你是一位命题专家，擅长根据学段水平生成高质量的同类练习题。', figureBase64)
 
     let parsed = extractJSON(result)
     let questions = parsed?.questions || []
@@ -319,13 +333,13 @@ ${gradePrompt}
 请按以下 JSON 格式返回（不要有其他文字,不要 markdown 代码块,纯 JSON 字符串即可）:
 {"questions":[{"id":"sq1","content":"题目内容","answer":"参考答案"}, ... 共 ${SIMILAR_COUNT} 项]}`
 
-    const result = await callAI(prompt, '你是一位命题专家，擅长根据学段水平生成高质量的同类练习题。')
+    const result = await callAI(prompt, '你是一位命题专家，擅长根据学段水平生成高质量的同类练习题。', req.body.figureBase64)
 
     let parsed = extractJSON(result)
     let questions = parsed?.questions || []
     const target = SIMILAR_COUNT
 
-    // 兜底：若题目数不足,让 AI 继续补齐
+    // 兜底：若题目数不足,让 AI 继续补齐（random）
     if (questions.length < target) {
       const need = target - questions.length
       const continuePrompt = `上轮只生成了 ${questions.length} 道,还差 ${need} 道。请继续生成剩余 ${need} 道（题型/难度与之前一致,不要重复已有题）。

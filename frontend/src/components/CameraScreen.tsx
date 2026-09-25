@@ -26,6 +26,29 @@ import { preprocessImage } from '@/utils/imagePreprocess'
 import { cropImage, type Region } from '@/utils/imageCrop'
 import 'katex/dist/katex.min.css'
 
+/**
+ * 把 AI 回传的 figureRegion 统一成 Region {x,y,w,h}。
+ * 后端可能给:已解析 object / JSON 字符串 / 空 / 非法 → 非法一律返回 null(宁缺毋滥)。
+ * 面积 <2% 整图的多半是误判符号,也直接丢弃。
+ */
+function parseFigureRegion(
+  raw: string | { x: number; y: number; w: number; h: number } | undefined,
+): Region | null {
+  let r = raw
+  if (typeof r === 'string') {
+    if (!r.trim()) return null
+    try { r = JSON.parse(r) as { x: number; y: number; w: number; h: number } } catch { return null }
+  }
+  if (!r || typeof r !== 'object') return null
+  const c = (v: unknown) => {
+    const n = Number(v)
+    return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : NaN
+  }
+  const x = c(r.x), y = c(r.y), w = c(r.w), h = c(r.h)
+  if ([x, y, w, h].some(isNaN) || w < 0.02 || h < 0.02) return null
+  return { x, y, w, h }
+}
+
 type Screen = 'dashboard' | 'childManage' | 'errorList' | 'errorDetail' | 'printPreview' | 'camera'
 type Phase = 'viewfinder' | 'annotating' | 'captured' | 'regionSelect' | 'recognizing' | 'result' | 'batchResult' | 'splitPage'
 type CameraMode = '拍题' | '作业' | '试卷' | '跨页'
@@ -103,12 +126,21 @@ export default function CameraScreen({ onNavigate }: Props) {
       }
 
       // 2) 对每框裁剪 + 独立 OCR
-      const results: Array<{ idx: number; title: string; knowledgePoint: string; textContent: string; sourceText?: string; croppedUrl: string; ok: boolean; detectedSubject?: string; message?: string }> = []
+      const results: Array<{ idx: number; title: string; knowledgePoint: string; textContent: string; sourceText?: string; croppedUrl: string; figureBase64: string; ok: boolean; detectedSubject?: string; message?: string }> = []
       for (let i = 0; i < regions.length; i++) {
         try {
           const croppedUrl = await cropImage(fullBase64, regions[i])
           // 单题裁剪图已小,无需再 preprocess
           const r = await api.recognizeQuestion({ imageBase64: croppedUrl, subject: recognizeSubject })
+          // 题目插图:AI 回传 figureRegion(归一化 bbox)时,在裁剪图内部再裁一次
+          // (cropImage 已自带坐标 clamp + 面积下限,失败时降级为空,不影响主流程)
+          let figureBase64 = ''
+          try {
+            const fig = parseFigureRegion(r.figureRegion)
+            if (fig) figureBase64 = await cropImage(croppedUrl, fig)
+          } catch (fe) {
+            console.warn(`[OCR] 第 ${i + 1} 框题图裁剪失败,跳过插图:`, fe)
+          }
           results.push({
             idx: i,
             title: r.title || '',
@@ -116,6 +148,7 @@ export default function CameraScreen({ onNavigate }: Props) {
             textContent: r.textContent || '',
             sourceText: r.sourceText || '',
             croppedUrl,
+            figureBase64,
             ok: true,
             detectedSubject: r.detectedSubject as string | undefined,
           })
@@ -127,6 +160,7 @@ export default function CameraScreen({ onNavigate }: Props) {
             knowledgePoint: '',
             textContent: '',
             croppedUrl: '',
+            figureBase64: '',
             ok: false,
             message: e.message || '识别失败',
           })
@@ -157,6 +191,8 @@ export default function CameraScreen({ onNavigate }: Props) {
           imageUrl: r.croppedUrl || (recognizedImageBase64 || capturedImageUrl),
           imageBase64: r.croppedUrl || undefined,
           handwritingSvg: existingHandwritingSvg || undefined,
+          // 题目插图:AI 识别出的关键示意图(几何图/物理装置/化学结构等),单独裁剪
+          figureBase64: r.figureBase64 || undefined,
           // v40: 跨页拍题标记(从 splitPage phase 进来时,splitGroupId 已被赋值)
           isSplitPage: !!splitGroupId,
           pageIndex: splitGroupId ? 1 : 0,

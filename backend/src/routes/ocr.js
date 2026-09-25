@@ -24,6 +24,12 @@ import { checkDailyLimit } from '../middleware/paywall.js'
 
 const router = Router()
 
+// ─── 题目插图:归一化 figureRegion 透传给前端裁出 figureBase64 ─────────────
+// 设计:后端不裁图(避免引入 sharp 依赖/重建镜像),只把 AI 回传的归一化
+// 包围盒 {x,y,w,h} 原样放进 /api/ocr 响应的 figureRegion 字段;
+// 前端拿到后在【已裁剪的单题图】内部用现成 cropImage 再裁一次,得到题目插图
+// figureBase64,随 createError 入库。无图/解析失败 → figureRegion=''。
+
 router.get('/status', (_req, res) => {
   res.json({
     textin: process.env.TEXTIN_APP_ID ? 'configured' : 'not_configured',
@@ -115,6 +121,7 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
             knowledgePoint: visionParsed.knowledgePoint || '未知',
             textContent: visionParsed.textContent,
             sourceText: visionParsed.sourceText || '',
+            figureRegion: visionParsed.figureRegion || '',
             subject: llmSubject,
             detectedSubject: llmSubject,
             detail: {
@@ -179,6 +186,7 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
                   knowledgePoint: visionParsed.knowledgePoint || '未知',
                   textContent: visionParsed.textContent,
                   sourceText: visionParsed.sourceText || '',
+                  figureRegion: visionParsed.figureRegion || '',
                   subject: visionLlmSubject,
                   detectedSubject: visionLlmSubject,
                   detail: {
@@ -197,23 +205,24 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
             }
           }
 
-          return res.json({
-            title: parsed.title,
-            knowledgePoint: parsed.knowledgePoint || '未知',
-            textContent: parsed.textContent,
-            sourceText: parsed.sourceText || '',
-            subject: llmSubject,
-            detectedSubject: llmSubject,
-            detail: {
-              ocrSuccess: true,
-              handwritingErased,
-              textLineCount: textLines.length,
-              formulaCount: formulaLatex.length,
-              pipeline: 'textin+ai-text',
-              aiProvider: parsed._provider || 'unknown',
-              subjectDetection: 'llm',
-            },
-          })
+        return res.json({
+          title: parsed.title,
+          knowledgePoint: parsed.knowledgePoint || '未知',
+          textContent: parsed.textContent,
+          sourceText: parsed.sourceText || '',
+          figureRegion: parsed.figureRegion || '',
+          subject: llmSubject,
+          detectedSubject: llmSubject,
+          detail: {
+            ocrSuccess: true,
+            handwritingErased,
+            textLineCount: textLines.length,
+            formulaCount: formulaLatex.length,
+            pipeline: 'textin+ai-text',
+            aiProvider: parsed._provider || 'unknown',
+            subjectDetection: 'llm',
+          },
+        })
         }
       } catch (err) {
         console.warn('[OCR] AI 文本合并失败,降级快速路径:', err.message)
@@ -271,6 +280,7 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
           knowledgePoint: parsed.knowledgePoint || '未知',
           textContent: parsed.textContent,
           sourceText: parsed.sourceText || '',
+          figureRegion: parsed.figureRegion || '',
           subject: visionLlmSubject,
           detectedSubject: visionLlmSubject,
           detail: {

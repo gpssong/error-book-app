@@ -130,6 +130,8 @@ export interface ErrorItem {
   pageIndex?: number
   totalPages?: number
   splitGroupId?: string
+  // 题目插图（AI 识别出的关键示意图：几何图/物理装置/化学结构等，单独裁剪）
+  figureBase64?: string
   createdAt: string
   updatedAt: string
 }
@@ -231,9 +233,9 @@ const api = {
     request<ErrorItem>(`/errors/${id}/ai-analysis`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   // ─── AI 服务 ────────────────────────────────────────────────────────────────
-  analyzeError: (data: { title: string; knowledgePoint: string; subject: string; textContent?: string; sourceText?: string; childId?: string }) =>
+  analyzeError: (data: { title: string; knowledgePoint: string; subject: string; textContent?: string; sourceText?: string; childId?: string; figureBase64?: string }) =>
     request<AIAnalysisResult>('/ai/analyze', { method: 'POST', body: JSON.stringify(data) }),
-  generateSimilar: (data: { title: string; knowledgePoint: string; subject: string; difficulty?: string; textContent?: string; sourceText?: string; childId?: string }) =>
+  generateSimilar: (data: { title: string; knowledgePoint: string; subject: string; difficulty?: string; textContent?: string; sourceText?: string; childId?: string; figureBase64?: string }) =>
     request<{ questions: SimilarQuestion[] }>('/ai/similar', { method: 'POST', body: JSON.stringify(data) }),
   generateRandom: (data: { subject: string; grade?: string; childId?: string }) =>
     request<{ questions: SimilarQuestion[] }>('/ai/random', { method: 'POST', body: JSON.stringify(data) }),
@@ -260,6 +262,8 @@ const api = {
       sourceText?: string         // 语文题:诗词原文/文言文/阅读文章
       subject?: string
       detectedSubject?: string
+      // 题目插图归一化包围盒 {x,y,w,h} [0,1];无图/解析失败 → ''
+      figureRegion?: string | { x: number; y: number; w: number; h: number }
     }>('/ocr', {
       method: 'POST',
       headers: extraHeaders,

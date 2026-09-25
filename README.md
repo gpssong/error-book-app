@@ -1,8 +1,8 @@
-# 错题本 App (v38.1)
+# 错题本 App (v41)
 
-多子女错题本应用，支持 **拍照识题 + AI讲解 + 手写批注 + 错题管理 + 多用户账号隔离 + 语文原文提取 + 学科 LLM 自动分类 + 登录态持久化**。
+多子女错题本应用，支持 **拍照识题 + 题目插图单独保存 + AI讲解(看图) + 跨页拍题 + 手写批注 + 错题管理 + 多用户账号隔离 + 语文原文提取 + 学科 LLM 自动分类 + 登录态持久化**。
 
-**最新版本**: `error-book-v38-login-persist.apk`
+**最新版本**: `error-book-v41-figure.apk`
 **线上地址**: http://error.93gushi.com:4040
 **内网直连**: http://192.168.0.32:4040(飞牛 NAS 局域网)
 
@@ -289,6 +289,7 @@ crontab -l | grep ddns
 
 | 版本 | 日期 | 主要变化 |
 |---|---|---|
+| **v41** | 2026-09-25 | 题目插图单独保存 + AI 看图讲解:vision AI 识别时回传 `figureRegion`(插图归一化包围盒)→ 前端在裁剪图内再裁一次得 `figureBase64` 单独入库 → 详情页「📷 题目插图」卡片;AI 讲解/同类题把题图喂进多模态 message。后端 schema + `createMemoryError` 加 `figureBase64`。先发版后端(否则 strict:true 丢字段),再发版前端。APK: `error-book-v41-figure.apk` |
 | **v40** | 2026-09-24 | 跨页拍题模式:viewfinder 加「跨页」tab → 拍2张自动垂直拼接(滑块手动对齐)→ 单条错题入库。后端 `ErrorQuestion` schema 加 4 字段(`isSplitPage`/`pageIndex`/`totalPages`/`splitGroupId`)。先发版后端(否则 mongoose strict:true 静默丢字段),再发版前端。APK: `error-book-v40-split-page.apk` |
 | **v39** | 2026-09-17 | 后端 MongoDB 竞态加固:mongo healthcheck + backend `service_healthy` 门控(治本);backend 加运行期自愈(`ensureMongoReconnect` 后台重连 + `watchDisconnection` 断连自愈 + `isMemoryDB` 语义收紧),mongo 启动竞态/中途断连时静默切回,不再需手动 restart |
 | **v38.2** | 2026-09-17 | DDNS 自动同步:飞牛 v6 动态租约变化 → 每5分钟 cron 比对刷新阿里云 AAAA 记录(脚本 `scripts/ddns-update.sh`,全路径 + `--profile dns` + 根域 `93gushi.com`) |

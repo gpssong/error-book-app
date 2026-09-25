@@ -57,6 +57,9 @@ export const errorQuestionSchema = new mongoose.Schema(
     pageIndex:    { type: Number,  default: 0 },   // 该条在跨页题中的序号(单条入库下固定为 1)
     totalPages:   { type: Number,  default: 0 },   // 拼接时实际页数(典型为 2)
     splitGroupId: { type: String,  default: '' },  // 跨页会话 id,便于未来多条聚合
+    // 题目插图(AI 识别出的关键示意图:几何图/物理装置/化学结构等),单独裁剪存储,
+    // 复习时孩子在详情页可见「题目插图」卡片,不用翻整题大图。无图 → ''
+    figureBase64: { type: String, default: '' },
   },
   { timestamps: true }
 )
@@ -99,6 +102,7 @@ export function createMemoryError(payload, childId) {
     pageIndex:    payload.pageIndex ?? 0,
     totalPages:   payload.totalPages ?? 0,
     splitGroupId: payload.splitGroupId ?? '',
+    figureBase64: payload.figureBase64 ?? '',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }

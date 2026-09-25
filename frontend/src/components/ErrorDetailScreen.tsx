@@ -64,6 +64,7 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
         subject: err.subject,
         textContent: err.textContent,
         sourceText: err.sourceText,        // 语文题把诗词原文/阅读文章也带上,讲解更准
+        figureBase64: err.figureBase64,    // 题目插图:让 AI 讲解时能看到几何/物理/化学示意图
         childId: err.childId,
       })
       setAiResult(result)
@@ -91,6 +92,7 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
         subject: err.subject,
         textContent: err.textContent,
         sourceText: err.sourceText,        // 语文题:让 AI 出同类题时参考原文
+        figureBase64: err.figureBase64,    // 题目插图:同类题也能参考示意图
         childId: err.childId,
       })
       setSimilarQuestions(res.questions)
@@ -317,6 +319,22 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
                 <span className="text-xs font-bold text-slate-700">{err.date}</span>
               </div>
             </div>
+
+            {/* 题目插图(AI 识别出的关键示意图:几何图/物理装置/化学结构等) */}
+            {err.figureBase64 && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">📷</span>
+                  <span className="text-xs font-extrabold text-slate-700">题目插图</span>
+                </div>
+                <img
+                  src={err.figureBase64}
+                  alt="题目插图"
+                  className="w-full max-h-56 object-contain rounded-lg bg-slate-50"
+                />
+                <p className="text-[10px] text-slate-400">AI 自动从题目中裁出的关键示意图,复习时看图解题</p>
+              </div>
+            )}
 
             {/* 诗词原文 / 阅读文章原文(仅语文题有)*/}
             {err.sourceText && (

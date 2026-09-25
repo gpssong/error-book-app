@@ -96,6 +96,15 @@ B. (-\\infty,-1] \\cup [\\sqrt{e},+\\infty)
 C. (-\\infty,-1] \\cup [3,+\\infty)
 D. [-1,\\sqrt{e}]"
 
+figureRegion(题目插图包围盒) 说明:
+- 如果题目中包含一张关键示意图(几何图形/物理装置图/化学结构/折线图/表格配图等),
+  额外返回 figureRegion 字段,值为该图在整张图片中的归一化包围盒:
+  {\"x\":0.55,\"y\":0.02,\"w\":0.42,\"h\":0.55}
+  x/y = 包围盒左上角相对整图的宽高比 [0,1]; w/h = 包围盒宽高相对整图的宽高比 [0,1]。
+  包围盒尽量只包住图本身(连同标注字母),不要含题干文字和选项。
+- 若题目确实没有示意图(纯文字题),figureRegion 返回空字符串 \""\"(不要瞎猜)。
+- 几何/物理/化学/统计图题务必给出 figureRegion。
+
 注意:
 - 如果 ocrText 为空,以图片为主,不要输出"无法识别"
 - 如果 ocrText 中漏字,以图片为准
@@ -107,7 +116,8 @@ D. [-1,\\sqrt{e}]"
   "title": "...",
   "knowledgePoint": "...",
   "textContent": "...",
-  "sourceText": "..."   // 诗词原文/文言文/阅读文章(只语文类有值,其它学科留空字符串)
+  "sourceText": "..."   // 诗词原文/文言文/阅读文章(只语文类有值,其它学科留空字符串),
+  "figureRegion": "{\"x\":0.55,\"y\":0.02,\"w\":0.42,\"h\":0.55}"   // 题目插图包围盒(归一化),无图则留 ""
 }`
 
 /**
@@ -342,7 +352,12 @@ ${subject}
 
 数学符号必须用标准 LaTeX:
 - \\cup / \\cap / \\in / \\geq / \\dfrac{a}{b} / \\sqrt{a} / +\\infty
-- 选项写成 "A. ...\\nB. ...\\nC. ...\\nD. ..."`.trim()
+- 选项写成 "A. ...\\nB. ...\\nC. ...\\nD. ..."
+
+如果题目里有一张关键示意图(几何立体图/物理装置/化学结构/折线图等),
+额外输出 figureRegion = 该图在整张图中归一化包围盒 {x,y,w,h} [0,1];
+纯文字题 figureRegion 输出 ""。
+按系统提示的 JSON 格式输出(含 figureRegion 字段)。`.trim()
 
   // 优先 Agnes 视觉（已在 .env 配置 VISION_MODEL）
   if (AGNES_KEY) {
@@ -388,7 +403,33 @@ function normalizeParsed(p) {
     knowledgePoint: String(p.knowledgePoint || '').slice(0, 30) || '未知',
     textContent: normalizeLatex(p.textContent || '').trim(),
     sourceText: String(p.sourceText || '').trim(),
+    // 题目插图归一化包围盒 {x,y,w,h} [0,1];无图/解析失败 → ''
+    figureRegion: normalizeFigureRegion(p.figureRegion),
   }
+}
+
+/**
+ * 把 LLM 回的 figureRegion 规范化成 {x,y,w,h} 或 ''。
+ * LLM 可能返回: 已解析的 object / JSON 字符串 / 空 / 缺省。
+ * 坐标 clamp 到 [0,1];任何越界或非法 → 返回 ''(宁可不裁,不裁错图)。
+ */
+function normalizeFigureRegion(raw) {
+  let r = raw
+  if (typeof r === 'string') {
+    if (!r.trim()) return ''
+    try { r = JSON.parse(r) } catch { return '' }
+  }
+  if (!r || typeof r !== 'object') return ''
+  const c = (v) => {
+    const n = Number(v)
+    return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : NaN
+  }
+  const x = c(r.x), y = c(r.y), w = c(r.w), h = c(r.h)
+  // 四个坐标都要合法,且面积不能太小(<2% 整图 → 多半是误判的符号,宁缺毋滥)
+  if ([x, y, w, h].some(isNaN) || w < 0.02 || h < 0.02) return ''
+  // x/y 不得越过 1-w / 1-h
+  if (x > 1 - w + 1e-3 || y > 1 - h + 1e-3) return ''
+  return { x, y, w, h }
 }
 
 /**
