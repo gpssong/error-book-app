@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint": "eslint src/"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -19,6 +20,8 @@
     "uuid": "^10.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^9.39.5",
     "vitest": "^5.0.1"
   }
 }

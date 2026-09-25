@@ -16,16 +16,12 @@ export async function connectDB() {
   if (connected) return true
 
   const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/error_book'
-  try {
-    await mongoose.connect(uri, {
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-    })
-    connected = true
-    return true
-  } catch (err) {
-    throw err
-  }
+  await mongoose.connect(uri, {
+    maxPoolSize: 10,
+    serverSelectionTimeoutMS: 5000,
+  })
+  connected = true
+  return true
 }
 
 /**

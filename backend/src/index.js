@@ -6,7 +6,8 @@
  * - 错题 CRUD（error_question API）
  * - AI 讲解 & 同类题生成（/api/ai/*）
  * - 图片上传
- * - 内存数据库（MongoDB 不可用时自动启用）
+ * - 数据库:默认 MongoDB;设 USE_MEMORY_DB=true 显式走内存(演示),
+ *   MongoDB 连接失败时也会自动降级到内存并后台重连(v39 自愈)
  */
 import express from 'express'
 import cors from 'cors'
