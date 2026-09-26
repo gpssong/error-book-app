@@ -1,10 +1,10 @@
-# 错题本 App (v43)
+# 错题本 App (v44)
 
-多子女错题本应用，支持 **拍照识题 + 题目插图单独保存 + AI讲解(看图) + 跨页拍题 + 手写批注 + 错题管理 + 打印同类题数量可选 + 多用户账号隔离 + 语文原文提取 + 学科 LLM 自动分类 + 登录态持久化**。
+多子女错题本应用，支持 **拍照识题 + 题目插图单独保存 + AI讲解(看图) + 跨页拍题 + 手写批注 + 错题管理 + 打印同类题数量可选 + 多用户账号隔离 + 语文原文提取 + 学科 LLM 自动分类 + 登录态持久化 + 图片性能根治**。
 
 **工程基建**: 前后端测试(vitest)+ ESLint + GitHub Actions CI + `tsc` 门禁(见「开发/测试/CI」章节)。
 
-**最新版本**: `error-book-v42-similar-count.apk`(v43 为工程加固,不重新出 APK)
+**最新版本**: `error-book-v42-similar-count.apk`(v44 为性能根治,需重新出 APK)
 **线上地址**: http://error.93gushi.com:4040
 **内网直连**: http://192.168.0.32:4040(飞牛 NAS 局域网)
 
@@ -145,6 +145,22 @@ v12 时代前端按用户选定的 `subject` 入错题,LLM OCR 解析出的知�
 - 学科枚举 6 → 9:数学/语文/英语/物理/化学/生物/历史/地理/科学
 - 前端 `ErrorListScreen` 筛选器动态拉(只显示当前有数据的学科)
 
+### 9. 图片性能根治(v44 新增)
+
+**问题**: 历史数据把题图以 base64 内联存进 Mongo(`imageBase64`/`figureBase64`),`GET /api/errors` 整文档返回 —— 错题越多, 每次打开列表都要拉 N 张图的 base64(生产实测 59 题 = 10.9MB JSON), 公网 v6 拉取慢。
+
+**根治**: 图片脱离列表 JSON、脱离 Mongo, 存成静态文件:
+
+| 层 | 手段 | 效果 |
+|---|---|---|
+| P0 列表投影 | `GET /api/errors` `.select('-imageBase64 -figureBase64')` | 列表 JSON ~99% 瘦身, 秒开(零数据风险) |
+| P1 单独取图 | `GET /api/errors/:id/image`(静态 URL→302)+ `GET /:id?full=1` 按需全量 | 详情页首屏轻量, AI 讲解时才拉全量 base64 |
+| P2a 静态化 | 入库前 `uploadBase64` 落盘 `/uploads/xxx.jpg`, `imageUrl` 存 URL | `<img>` 走静态文件, 浏览器/nginx 可缓存(30d) |
+| P2a 缩放 | `cropImage` 加 `maxDim=1280` + `quality=0.85` | 裁剪图不再=原图 4000px 那么大, 存储瘦身 |
+| P2c 迁移 | `backend/scripts/migrate-images-to-static.js`(dry-run + 自动备份) | 存量 base64 落盘 + `imageUrl` 改指 URL + 清空大 base64, 库瘦身 |
+
+**部署要点**: compose 给 backend+nginx 各挂 `./backend-public/uploads`(不加卷则 `docker build` 重建镜像丢图); `nginx.conf` 加 `location ^~ /uploads/ → alias /uploads-static/` + 30d 缓存。`figureBase64` 保留(AI 讲解 `ai.js` 只用它喂视觉模型, 从不读 `imageBase64`), 迁移只补 `figureImageUrl`。
+
 ## API 接口
 
 ### 认证（公开）
@@ -160,8 +176,9 @@ v12 时代前端按用户选定的 `subject` 入错题,LLM OCR 解析出的知�
 - `DELETE /api/children/:id` — 删除（级联删除错题）
 
 ### 错题管理（需 JWT）
-- `GET /api/errors?childId=&subject=` — 列表
-- `GET /api/errors/:id` — 详情
+- `GET /api/errors?childId=&subject=` — 列表(v44 起不返回 `imageBase64`/`figureBase64`, 只返回 `imageUrl` 静态 URL, 轻量可缓存)
+- `GET /api/errors/:id` — 详情(默认排除大 base64;`?full=1` 返回全量含 base64, 供详情页 AI 讲解喂图)
+- `GET /api/errors/:id/image` — 单独取图(v44):静态 URL→302 跳 `/uploads`,老数据→吐 data-URL
 - `POST /api/errors` — 创建
 - `PATCH /api/errors/:id` — 更新
 - `DELETE /api/errors/:id` — 删除单条
@@ -293,6 +310,7 @@ crontab -l | grep ddns
 
 | 版本 | 日期 | 主要变化 |
 |---|---|---|
+| **v44** | 2026-09-26 | 图片性能根治(解决"错题多 + 公网打开慢"): ① P0 列表接口 `GET /api/errors` 加投影排除两张大 base64(列表 JSON 从 ~11MB 降到纯文字);② P1 新增 `GET /api/errors/:id/image` + `GET /:id?full=1` 按需取图;③ P2a 入库前把裁剪图落盘 `/uploads` 静态文件,`imageUrl` 存 URL(可缓存),`cropImage` 加 `maxDim=1280` 缩放 + `quality=0.85`;④ P2c 存量迁移脚本 `backend/scripts/migrate-images-to-static.js`(dry-run + 自动备份,`imageBase64` 落盘清空、`figureBase64` 保留供 AI);compose 加 uploads 持久化卷、nginx.conf 加 `/uploads` 静态 location。需重新出 APK |
 | **v43** | 2026-09-25 | 工程加固批次(非新功能, 不影响线上产物): 修 7 处 tsc 错误 + `build` 加 `tsc --noEmit` 门禁; 后端装 vitest/supertest + 42 条单测(`jsonParse`/`latexNormalize`/`auth`/`textExtract`); `ocr.js` 启发式抽到 `pipeline/textExtract.js`; 后端 ESLint(flat config, 0 error); GitHub Actions CI(backend lint+test / frontend typecheck+test+build)。产物 chunk 名不变 `index-C54h8FJ4.js` |
 | **v42** | 2026-09-25 | 打印同类练习题数量可选:`PrintPreviewScreen` 顶部「每题同类题」改为 `<input type=number min=0 max=8>` 自主输入(默认4,失焦钳位0–8)+「不打印」按钮;纯函数 `sliceSimilarQuestions` 集中 slice+兜底文案(min(N,M)),vitest 8 用例。纯前端改动,APK 已重出 `error-book-v42-similar-count.apk` |
 | **v41** | 2026-09-25 | 题目插图单独保存 + AI 看图讲解:vision AI 识别时回传 `figureRegion`(插图归一化包围盒)→ 前端在裁剪图内再裁一次得 `figureBase64` 单独入库 → 详情页「📷 题目插图」卡片;AI 讲解/同类题把题图喂进多模态 message。后端 schema + `createMemoryError` 加 `figureBase64`。先发版后端(否则 strict:true 丢字段),再发版前端。APK: `error-book-v41-figure.apk` |

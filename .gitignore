@@ -30,3 +30,7 @@ logs/
 # Android specific
 android-app/android/.gradle/
 android-app/android/local.properties
+
+# v44 P2: 图片静态文件(运行时产物, 不入 git)
+backend-public/
+backend/public/uploads/

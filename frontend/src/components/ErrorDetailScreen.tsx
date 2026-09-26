@@ -13,7 +13,7 @@ import { Icon, SubjectTag } from '@/components/Icons'
 import DrawingCanvas from '@/components/DrawingCanvas'
 import LatexPreview from '@/components/LatexPreview'
 import type { ErrorItem, SimilarQuestion, AIAnalysisResult } from '@/stores/api'
-import api from '@/stores/api'
+import api, { resolveImageUrl } from '@/stores/api'
 
 type Screen = 'dashboard' | 'childManage' | 'errorList' | 'errorDetail' | 'printPreview' | 'camera'
 type TabKey = 'detail' | 'ai' | 'similar'
@@ -36,20 +36,52 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(err?.aiAnalysis ?? null)
   const [similarQuestions, setSimilarQuestions] = useState<SimilarQuestion[]>(err?.similarQuestions ?? [])
-  const [displayImageUrl, setDisplayImageUrl] = useState<string>(err?.imageBase64 ?? err?.imageUrl ?? '')
+  // v44 P0/P1: 列表投影后 err.imageBase64/figureBase64 为空, 显示走轻量 imageUrl(可缓存静态文件);
+  // AI 讲解需要 base64 喂图 → 进详情页时按需拉全量, 补齐后再存一份供 AI 用。
+  const [fullImageBase64, setFullImageBase64] = useState<string>(err?.imageBase64 ?? '')
+  const [fullFigureBase64, setFullFigureBase64] = useState<string>(err?.figureBase64 ?? '')
+  const [displayImageUrl, setDisplayImageUrl] = useState<string>(err?.imageUrl ?? err?.imageBase64 ?? '')
   const [currentHandwritingSvg, setCurrentHandwritingSvg] = useState<string>(err?.handwritingSvg ?? '')
   const [hasHandwriting, setHasHandwriting] = useState<boolean>(!!err?.handwritingSvg)
   const [showAnswer, setShowAnswer] = useState<Record<string, boolean>>({})
   const [deleting, setDeleting] = useState(false)
 
+  // 按需拉全量详情(含 base64), 供 AI 讲解多模态喂图
+  useEffect(() => {
+    let cancelled = false
+    const fullErr = err ?? errors.find((e) => e.id === errorId)
+    if (!fullErr) return
+    // 已有 base64(老数据或全量 context)则跳过; 否则拉全量补齐
+    if (fullErr.imageBase64) {
+      setFullImageBase64(fullErr.imageBase64)
+      setFullFigureBase64(fullErr.figureBase64 ?? '')
+      return
+    }
+    api.getErrorFull(fullErr.id).then((d) => {
+      if (cancelled) return
+      setFullImageBase64(d.imageBase64 ?? '')
+      setFullFigureBase64(d.figureBase64 ?? '')
+      // 显示优先轻量静态图; 仅当 imageUrl 也缺时才用 base64 兜底
+      if (!d.imageUrl) setDisplayImageUrl(d.imageBase64 ?? d.imageUrl ?? '')
+    }).catch((e) => {
+      console.warn('[Detail] 拉全量详情失败, AI 讲解可能缺图:', e)
+    })
+    return () => { cancelled = true }
+    // 只在切错题时拉一次
+  }, [errorId])
+
   // 当错误数据从后端刷新时同步本地状态
+  // v44: 显示优先轻量 imageUrl(可缓存静态文件); 仅当没有 imageUrl 才用 base64 兜底
   useEffect(() => {
     if (err) {
-      setDisplayImageUrl(err.imageBase64 ?? err.imageUrl ?? '')
+      setDisplayImageUrl(err.imageUrl || err.imageBase64 || '')
       setCurrentHandwritingSvg(err.handwritingSvg ?? '')
       setHasHandwriting(!!err.handwritingSvg)
       setAiResult(err.aiAnalysis ?? null)
       setSimilarQuestions(err.similarQuestions ?? [])
+      // 若 context 里已带全量 base64(老数据), 直接补齐 AI 用图
+      if (err.imageBase64) setFullImageBase64(err.imageBase64)
+      if (err.figureBase64) setFullFigureBase64(err.figureBase64)
     }
   }, [err?.id])
 
@@ -64,7 +96,7 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
         subject: err.subject,
         textContent: err.textContent,
         sourceText: err.sourceText,        // 语文题把诗词原文/阅读文章也带上,讲解更准
-        figureBase64: err.figureBase64,    // 题目插图:让 AI 讲解时能看到几何/物理/化学示意图
+        figureBase64: fullFigureBase64 || err.figureBase64 || undefined,  // v44: 全量详情补齐的插图 base64
         childId: err.childId,
       })
       setAiResult(result)
@@ -201,7 +233,7 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
         </div>
         <div className="flex-1 overflow-y-auto px-4 py-4">
           <DrawingCanvas
-            imageUrl={err.imageUrl}
+            imageUrl={resolveImageUrl(err.imageUrl)}
             existingSvg={currentHandwritingSvg || undefined}
             onSave={handleAnnotationSave}
             onCancel={closeAnnotation}
@@ -267,7 +299,7 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
             <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
               <div className="relative">
                 <img
-                  src={displayImageUrl}
+                  src={resolveImageUrl(displayImageUrl)}
                   alt={err.title}
                   className="w-full h-48 object-cover"
                 />
@@ -321,15 +353,16 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
             </div>
 
             {/* 题目插图(AI 识别出的关键示意图:几何图/物理装置/化学结构等) */}
-            {err.figureBase64 && (
+            {(err.figureBase64 || err.figureImageUrl) && (
               <div className="bg-white rounded-2xl p-4 shadow-sm space-y-2">
                 <div className="flex items-center gap-2">
                   <span className="text-base">📷</span>
                   <span className="text-xs font-extrabold text-slate-700">题目插图</span>
                 </div>
                 <img
-                  src={err.figureBase64}
+                  src={resolveImageUrl(err.figureImageUrl) || err.figureBase64}
                   alt="题目插图"
+                  loading="lazy"
                   className="w-full max-h-56 object-contain rounded-lg bg-slate-50"
                 />
                 <p className="text-[10px] text-slate-400">AI 自动从题目中裁出的关键示意图,复习时看图解题</p>

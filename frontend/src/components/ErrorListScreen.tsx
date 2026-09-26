@@ -5,7 +5,7 @@
 import React, { useState } from 'react'
 import { useApp } from '@/stores/AppContext'
 import { Icon, SubjectTag, Badge } from '@/components/Icons'
-import api from '@/stores/api'
+import api, { resolveImageUrl } from '@/stores/api'
 import type { Subject } from '@/stores/api'
 
 type Screen = 'dashboard' | 'childManage' | 'errorList' | 'errorDetail' | 'printPreview' | 'camera'
@@ -160,7 +160,7 @@ export default function ErrorListScreen({ onNavigate }: Props) {
                 </div>
               )}
               <div className="w-20 h-20 shrink-0 bg-slate-100">
-                <img src={err.imageUrl} alt={err.title} className="w-full h-full object-cover" />
+                <img src={resolveImageUrl(err.imageUrl)} alt={err.title} loading="lazy" className="w-full h-full object-cover" />
               </div>
               <div className="flex-1 p-3 min-w-0">
                 <div className="flex items-center gap-2 mb-1">

@@ -126,11 +126,19 @@ export default function CameraScreen({ onNavigate }: Props) {
       }
 
       // 2) 对每框裁剪 + 独立 OCR
-      const results: Array<{ idx: number; title: string; knowledgePoint: string; textContent: string; sourceText?: string; croppedUrl: string; figureBase64: string; ok: boolean; detectedSubject?: string; message?: string }> = []
+      const results: Array<{ idx: number; title: string; knowledgePoint: string; textContent: string; sourceText?: string; croppedUrl: string; uploadUrl: string; figureBase64: string; ok: boolean; detectedSubject?: string; message?: string }> = []
       for (let i = 0; i < regions.length; i++) {
         try {
-          const croppedUrl = await cropImage(fullBase64, regions[i])
-          // 单题裁剪图已小,无需再 preprocess
+          const croppedUrl = await cropImage(fullBase64, regions[i], { maxDim: 1280, quality: 0.85 })
+          // v44 P2a: 裁剪图上传成静态文件, 入库只存 /uploads URL(可缓存), 不再内联 base64
+          // imageBase64 仍保留 base64 供详情页 AI 讲解多模态喂图(列表已投影排除)
+          let uploadUrl = ''
+          try {
+            const up = await api.uploadBase64({ data: croppedUrl, filename: `q-${i}.jpg` })
+            uploadUrl = up.url
+          } catch (upErr) {
+            console.warn('[OCR] 图片上传失败, 回退内联 base64:', upErr)
+          }
           const r = await api.recognizeQuestion({ imageBase64: croppedUrl, subject: recognizeSubject })
           // 题目插图:AI 回传 figureRegion(归一化 bbox)时,在裁剪图内部再裁一次
           // (cropImage 已自带坐标 clamp + 面积下限,失败时降级为空,不影响主流程)
@@ -148,6 +156,7 @@ export default function CameraScreen({ onNavigate }: Props) {
             textContent: r.textContent || '',
             sourceText: r.sourceText || '',
             croppedUrl,
+            uploadUrl,
             figureBase64,
             ok: true,
             detectedSubject: r.detectedSubject as string | undefined,
@@ -160,6 +169,7 @@ export default function CameraScreen({ onNavigate }: Props) {
             knowledgePoint: '',
             textContent: '',
             croppedUrl: '',
+            uploadUrl: '',
             figureBase64: '',
             ok: false,
             message: e.message || '识别失败',
@@ -181,6 +191,8 @@ export default function CameraScreen({ onNavigate }: Props) {
         if (r.detectedSubject && r.detectedSubject !== '未知' && r.detectedSubject !== recognizeSubject) {
           correctedSubjects.add(r.detectedSubject)
         }
+        // v44 P2a: imageUrl 优先用 /uploads 静态 URL(可缓存),上传失败才回退内联 base64
+        const imageUrl = r.uploadUrl || r.croppedUrl || (recognizedImageBase64 || capturedImageUrl)
         await createError({
           childId: activeChildId,
           subject: finalSubject,
@@ -188,7 +200,8 @@ export default function CameraScreen({ onNavigate }: Props) {
           knowledgePoint: r.knowledgePoint || '',
           textContent,
           sourceText: r.sourceText || '',
-          imageUrl: r.croppedUrl || (recognizedImageBase64 || capturedImageUrl),
+          imageUrl,
+          // base64 保留供详情页 AI 讲解多模态喂图; 列表接口已投影排除
           imageBase64: r.croppedUrl || undefined,
           handwritingSvg: existingHandwritingSvg || undefined,
           // 题目插图:AI 识别出的关键示意图(几何图/物理装置/化学结构等),单独裁剪

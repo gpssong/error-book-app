@@ -55,8 +55,37 @@ router.get('/', async (req, res) => {
     const childIds = await Child.find(childFilter).distinct('_id')
     const filter = { childId: { $in: childIds } }
     if (subject) filter.subject = subject
-    const errors = await ErrorQuestion.find(filter).sort({ createdAt: -1 })
+    // v44 P0: 列表不返回两张大 base64 图(imageBase64/figureBase64 各 300KB~2MB),
+    // 否则错题多时列表 JSON 膨胀到数 MB, 公网拉取慢。缩略图走 imageUrl(/uploads 静态, 可缓存)。
+    // 手写字段 handwritingSvg 是 SVG(小), 详情页需要, 保留。
+    const errors = await ErrorQuestion.find(filter).select('-imageBase64 -figureBase64').sort({ createdAt: -1 })
     res.json(errors)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ─── 单独取图(v44 P1):按需返回单张题图, 避免详情页为取图拉全量 base64 ────────
+// 已有 imageUrl(/uploads 静态 URL)时直接 302 跳静态文件(可被浏览器/CDN 缓存);
+// 否则回退读 imageBase64, 以 data-URL 形式返回(老数据兼容)。
+router.get('/:id/image', async (req, res) => {
+  try {
+    if (isMemoryDB()) {
+      const err = getErrorOf(req.userId, req.params.id)
+      if (!err) return res.status(404).json({ error: '错题不存在' })
+      if (err.imageUrl) return res.redirect(err.imageUrl)
+      return res.type('text/plain').send(err.imageBase64 || '')
+    }
+    const err = await ErrorQuestion.findById(req.params.id)
+    if (!err) return res.status(404).json({ error: '错题不存在' })
+    const child = await Child.findOne({ _id: err.childId, ownerId: req.userId })
+    if (!child) return res.status(403).json({ error: '无权访问该错题' })
+    // 静态 URL → 302 交给 nginx/express.static(带缓存)
+    if (err.imageUrl && !err.imageUrl.startsWith('data:')) {
+      return res.redirect(err.imageUrl)
+    }
+    // 老数据: 只有 base64, 直接吐 data-URL
+    return res.type('text/plain').send(err.imageBase64 || '')
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -65,17 +94,21 @@ router.get('/', async (req, res) => {
 // ─── 获取单个错题 ─────────────────────────────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
+    // full=1 → 全量(含 imageBase64/figureBase64, 供详情页 AI 讲解喂图);
+    // 默认 → 投影排除两张大 base64, 首屏缩略图只需 imageUrl(轻量, 可缓存)。
+    const full = req.query.full === '1' || req.query.full === 'true'
     if (isMemoryDB()) {
       const err = getErrorOf(req.userId, req.params.id)
       if (!err) return res.status(404).json({ error: '错题不存在' })
-      return res.json(err)
+      if (full) return res.json(err)
+      return res.json({ ...err, imageBase64: undefined, figureBase64: undefined })
     }
     const err = await ErrorQuestion.findById(req.params.id)
     if (!err) return res.status(404).json({ error: '错题不存在' })
     // 权限校验
     const child = await Child.findOne({ _id: err.childId, ownerId: req.userId })
     if (!child) return res.status(403).json({ error: '无权访问该错题' })
-    res.json(err)
+    res.json(full ? err : { ...err, imageBase64: undefined, figureBase64: undefined })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

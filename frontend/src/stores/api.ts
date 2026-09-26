@@ -71,6 +71,19 @@ function startBaseProbe() {
 }
 export function getApiBase(): string { return _activeBase }
 
+/**
+ * 把 imageUrl 解析成可直接给 <img src> 的完整地址。
+ * - data:URL(base64 内联)→ 原样返回(老数据 / 上传失败回退)
+ * - /uploads/xxx.jpg(相对静态路径)→ 拼上当前 API base 绝对化
+ *   (Capacitor file:// 或跨域场景下, 相对路径无法解析, 必须绝对化)
+ */
+export function resolveImageUrl(url?: string): string {
+  if (!url) return ''
+  if (url.startsWith('data:') || url.startsWith('http') ) return url
+  // 相对路径 → 绝对化到 API base
+  return `${_activeBase}${url}`
+}
+
 // ─── 全局配置缓存（来自 /api/config，替代 localStorage eb_keys）────────────────
 let _configCache: { keys: Array<{ category: string; provider: string; current: boolean; enabled: boolean; appId?: string; secretCode?: string }> } | null = null
 // v37: 启动时探测可达 base + 预取 config（探测完成后才发 config 请求）
@@ -132,6 +145,8 @@ export interface ErrorItem {
   splitGroupId?: string
   // 题目插图（AI 识别出的关键示意图：几何图/物理装置/化学结构等，单独裁剪）
   figureBase64?: string
+  // v44: 图片静态化 —— 插图落盘 /uploads 后的 URL(可缓存); 迁移后 figureBase64 清空
+  figureImageUrl?: string
   createdAt: string
   updatedAt: string
 }
@@ -219,6 +234,8 @@ const api = {
     return request<ErrorItem[]>(`/errors${qs ? `?${qs}` : ''}`)
   },
   getError: (id: string) => request<ErrorItem>(`/errors/${id}`),
+  // v44 P1: 全量详情(含 imageBase64/figureBase64, 供详情页 AI 讲解多模态喂图)
+  getErrorFull: (id: string) => request<ErrorItem>(`/errors/${id}?full=1`),
   createError: (data: Partial<ErrorItem>) => request<ErrorItem>('/errors', { method: 'POST', body: JSON.stringify(data) }),
   updateError: (id: string, data: Partial<ErrorItem>) =>
     request<ErrorItem>(`/errors/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),

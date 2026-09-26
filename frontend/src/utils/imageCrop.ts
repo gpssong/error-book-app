@@ -23,10 +23,20 @@ export interface Region {
  *  - 输出 JPEG q=0.92(单题裁剪图很小,质量优先)
  *  - region 坐标按比例 clamp 到 [0,1]
  */
+/** v44 P2b: 输出缩放/质量上限,避免裁剪图=原图那么大(原图可达 4000px)导致存储失控 */
+export interface CropOpts {
+  /** 最长边上限(像素),默认 1280(手机看题 + 打印 KaTeX 已足够) */
+  maxDim?: number
+  /** JPEG 质量 0..1,默认 0.92;入库场景可传 0.85 进一步瘦身 */
+  quality?: number
+}
+
 export async function cropImage(
   imageDataUrl: string,
-  region: Region
+  region: Region,
+  opts: CropOpts = {},
 ): Promise<string> {
+  const { maxDim = 1280, quality = 0.92 } = opts
   const img = await loadImage(imageDataUrl)
 
   const W = img.naturalWidth
@@ -41,8 +51,18 @@ export async function cropImage(
 
   const sx = Math.round(x * W)
   const sy = Math.round(y * H)
-  const sw = Math.round(w * W)
-  const sh = Math.round(h * H)
+  // 源裁剪框(原分辨率)
+  const srcW = Math.round(w * W)
+  const srcH = Math.round(h * H)
+  // v44 P2b: 等比缩放到最长边 ≤ maxDim(只缩小不放大)
+  let sw = srcW
+  let sh = srcH
+  const maxSide = Math.max(sw, sh)
+  if (maxSide > maxDim) {
+    const scale = maxDim / maxSide
+    sw = Math.max(1, Math.round(sw * scale))
+    sh = Math.max(1, Math.round(sh * scale))
+  }
 
   const canvas = document.createElement('canvas')
   canvas.width = sw
@@ -50,9 +70,9 @@ export async function cropImage(
   const ctx = canvas.getContext('2d')!
   ctx.imageSmoothingQuality = 'high'
   ctx.imageSmoothingEnabled = true
-  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
+  ctx.drawImage(img, sx, sy, srcW, srcH, 0, 0, sw, sh)
 
-  return canvas.toDataURL('image/jpeg', 0.92)
+  return canvas.toDataURL('image/jpeg', quality)
 }
 
 /**

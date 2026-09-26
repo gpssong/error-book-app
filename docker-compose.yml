@@ -36,6 +36,12 @@ services:
       PORT: 3001
       HOST: 0.0.0.0
       MONGODB_URI: mongodb://mongo:27017/error_book
+    # v44 P2: 图片静态文件持久化卷。express.static 挂 /app/public/uploads,
+    # 上传/迁移落盘到这里; 不加卷则 docker 重建镜像会丢图。
+    volumes:
+      - ./backend-public/uploads:/app/public/uploads
+      # v44 P2: 图片静态文件持久化卷。backend 写 /app/public/uploads(=宿主机 ./backend-public/uploads),
+      # nginx 挂同一目录吐静态图。不加卷则 docker build 重建镜像会丢已上传图片。
     networks:
       - error-book-net
 
@@ -50,6 +56,9 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./frontend:/usr/share/nginx/html:ro
+      # v44 P2: 图片静态文件。backend 写 ./backend-public/uploads,
+      # nginx 挂同一目录到 /uploads-static 直接以静态吐图(不走 backend, 带缓存)。
+      - ./backend-public/uploads:/uploads-static:ro
     networks:
       - error-book-net
     # v38 加固:飞牛 OS vol1/1000/ 路径上容器启动偶发挂载失效(目录 total 0),

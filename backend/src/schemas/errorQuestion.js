@@ -60,6 +60,8 @@ export const errorQuestionSchema = new mongoose.Schema(
     // 题目插图(AI 识别出的关键示意图:几何图/物理装置/化学结构等),单独裁剪存储,
     // 复习时孩子在详情页可见「题目插图」卡片,不用翻整题大图。无图 → ''
     figureBase64: { type: String, default: '' },
+    // v44: 图片静态化 —— 主图/插图落盘 /uploads 后,库里存 URL(可缓存),base64 字段清空
+    figureImageUrl: { type: String, default: '' },
   },
   { timestamps: true }
 )

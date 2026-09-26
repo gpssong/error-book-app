@@ -5,6 +5,7 @@
 import React, { useState } from 'react'
 import { useApp } from '@/stores/AppContext'
 import { Icon, SubjectTag, Badge } from '@/components/Icons'
+import { resolveImageUrl } from '@/stores/api'
 import type { Subject } from '@/stores/api'
 
 type Screen = 'dashboard' | 'childManage' | 'errorList' | 'errorDetail' | 'printPreview' | 'camera'
@@ -224,7 +225,7 @@ export default function DashboardScreen({ onNavigate }: Props) {
                 className="w-full bg-white rounded-2xl p-3 shadow-sm flex items-center gap-3 text-left active:scale-98 transition-transform"
               >
                 <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100 shrink-0">
-                  <img src={err.imageUrl} alt={err.title} className="w-full h-full object-cover" />
+                  <img src={resolveImageUrl(err.imageUrl)} alt={err.title} loading="lazy" className="w-full h-full object-cover" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
