@@ -1,10 +1,10 @@
-# 错题本 App (v44)
+# 错题本 App (v45)
 
-多子女错题本应用，支持 **拍照识题 + 题目插图单独保存 + AI讲解(看图) + 跨页拍题 + 手写批注 + 错题管理 + 打印同类题数量可选 + 多用户账号隔离 + 语文原文提取 + 学科 LLM 自动分类 + 登录态持久化 + 图片性能根治**。
+多子女错题本应用，支持 **拍照识题 + 题目插图单独保存 + AI讲解(看图) + 跨页拍题 + 手写批注 + 错题管理 + 打印同类题数量可选 + 多用户账号隔离 + 语文原文提取 + 学科 LLM 自动分类 + 登录态持久化 + 图片性能根治 + 列表分页(无限滚动)**。
 
 **工程基建**: 前后端测试(vitest)+ ESLint + GitHub Actions CI + `tsc` 门禁(见「开发/测试/CI」章节)。
 
-**最新版本**: `error-book-v42-similar-count.apk`(v44 为性能根治,需重新出 APK)
+**最新版本**: `error-book-v45-paged-list.apk`
 **线上地址**: http://error.93gushi.com:4040
 **内网直连**: http://192.168.0.32:4040(飞牛 NAS 局域网)
 
@@ -310,6 +310,7 @@ crontab -l | grep ddns
 
 | 版本 | 日期 | 主要变化 |
 |---|---|---|
+| **v45** | 2026-09-26 | 错题列表分页 + 无限滚动(千条级仍流畅, P3 性能兜底): `GET /api/errors?paged=1&offset=&limit=`(默认全量不变, 分页返回 `{items,hasMore,total}` + `X-Total-Count` 头, Mongo `countDocuments`+`skip/limit`); 前端 `ErrorListScreen` 无限滚动(服务端分页 + 学科服务端筛选 + 竞态保护), 多选作用域=已加载页; 共享 `store.errors` 保留供 Dashboard 统计/打印全选。顺带补提交 v44 P1 详情投影(`GET /:id` 默认 `.select` 排除大 base64)。APK: `error-book-v45-paged-list.apk` |
 | **v44** | 2026-09-26 | 图片性能根治(解决"错题多 + 公网打开慢"): ① P0 列表接口 `GET /api/errors` 加投影排除两张大 base64(列表 JSON 从 ~11MB 降到纯文字);② P1 新增 `GET /api/errors/:id/image` + `GET /:id?full=1` 按需取图;③ P2a 入库前把裁剪图落盘 `/uploads` 静态文件,`imageUrl` 存 URL(可缓存),`cropImage` 加 `maxDim=1280` 缩放 + `quality=0.85`;④ P2c 存量迁移脚本 `backend/scripts/migrate-images-to-static.js`(dry-run + 自动备份,`imageBase64` 落盘清空、`figureBase64` 保留供 AI);compose 加 uploads 持久化卷、nginx.conf 加 `/uploads` 静态 location。需重新出 APK |
 | **v43** | 2026-09-25 | 工程加固批次(非新功能, 不影响线上产物): 修 7 处 tsc 错误 + `build` 加 `tsc --noEmit` 门禁; 后端装 vitest/supertest + 42 条单测(`jsonParse`/`latexNormalize`/`auth`/`textExtract`); `ocr.js` 启发式抽到 `pipeline/textExtract.js`; 后端 ESLint(flat config, 0 error); GitHub Actions CI(backend lint+test / frontend typecheck+test+build)。产物 chunk 名不变 `index-C54h8FJ4.js` |
 | **v42** | 2026-09-25 | 打印同类练习题数量可选:`PrintPreviewScreen` 顶部「每题同类题」改为 `<input type=number min=0 max=8>` 自主输入(默认4,失焦钳位0–8)+「不打印」按钮;纯函数 `sliceSimilarQuestions` 集中 slice+兜底文案(min(N,M)),vitest 8 用例。纯前端改动,APK 已重出 `error-book-v42-similar-count.apk` |
@@ -354,6 +355,7 @@ crontab -l | grep ddns
 | **v3-v1** | 2026-09-02 | 初版 |
 
 ## 待改进（未实施）
+- ~~列表分页(错题上千条时流畅)~~ → **v45 已实现**(`?paged=1` 服务端分页 + 前端无限滚动, 见版本历史)
 - 区域选择后加"自动版面分析"建议位置（用户只微调）
 - vision-fallback 加缓存（同图 1 分钟内复用，避免重复慢请求）
 - 多题识别时按"4 选项自动切题"

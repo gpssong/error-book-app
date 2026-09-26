@@ -1,5 +1,36 @@
 # Changelog
 
+## v45 (2026-09-26) - 错题列表分页 + 无限滚动(千条级仍流畅)
+
+### 背景
+
+v44 解决了「列表 JSON 带 11MB base64」的根因, 但列表本身仍是**一次全量拉回**(单孩子所有错题)。错题上千条时, 即使每条已轻量, 单次拉回 + 前端一次性渲染 N 张 `<img>` 仍会卡顿。本次加**服务端分页 + 前端无限滚动**, 首屏只拉 30 条, 滚动到底自动追加。
+
+### 改动
+
+| 层 | 文件 | 内容 |
+|---|---|---|
+| 后端 | `routes/errorQuestion.js` | `GET /api/errors` 加 `?paged=1&offset=&limit=`(limit 默认 30 / 上限 100), 返回 `{items, hasMore, total}` + `X-Total-Count` 头; **默认全量形态不变**(仍返回数组), 分页是 additive, 老客户端零影响。Mongo 一次 `countDocuments` + `skip/limit`(索引 `{childId, createdAt}` 覆盖排序) |
+| 前端 | `stores/api.ts` | 新增 `getErrorsPage({childId, subject, offset, limit})` |
+| 前端 | `ErrorListScreen.tsx` | 本地分页列表 `pageItems` + 无限滚动(滚到距底 <240px 追加); 学科筛选走**服务端**(不再客户端 filter); child/subject 变化重置; 竞态保护(飞行中切换丢弃旧结果); 多选/「全选已加载」作用域 = 已加载页 |
+
+### 设计决策
+
+- **不改共享 store**:`AppContext.errors` 仍由 AppContext 拉全量, Dashboard「本周统计」图 + 打印页「全选」不受影响; 分页只作用于列表页本身。
+- **全量接口保留**:`?paged=1` 才走 skip/limit, 默认路径原样, 兼容老 APK。
+- **治标定位**:这是 P3(性能兜底), 治本还是 v44 的图片静态化。错题上千条时靠分页保持流畅, 但**不会减少已存储数据量**。
+
+### 顺带补提交
+
+- v44 P1 的 `GET /:id` 详情投影修复(`.select` 排除大 base64, `?full=1` 才全量)在 v44 部署时已上线但**漏提交**, 本次一并 `git commit`(线上与仓库对齐)。
+
+### 验证
+
+- 前端 `tsc --noEmit` ✓ / `pnpm build` ✓(chunk `index-HdQt4DWI.js`)
+- 后端 `pnpm test` 42/42 ✓ / `pnpm lint` 0 error
+- 线上(飞牛 v6):注册临时账号建 6 条错题, `?paged=1&limit=2` → `items=2 hasMore=true total=6`;`?offset=4` → `hasMore=false`;响应头 `X-Total-Count: 6` ✓;默认路径仍返回数组 ✓
+- APK `error-book-v45-paged-list.apk`(5.87MB, 含 v45 chunk)→ 飞牛同步盘
+
 ## v44 (2026-09-26) - 图片性能根治:列表不传大图 + 图片静态化 + 裁剪缩放
 
 ### 背景
