@@ -42,14 +42,28 @@ function getChildOf(userId, id) {
 }
 
 // ─── 获取错题列表 ─────────────────────────────────────────────────────────────
+// 两种形态(共享权限 + 投影逻辑):
+//  - 默认(全量): 客户端本地过滤/统计/全选打印需要整个孩子错题集 → 直接 res.json(数组)
+//  - ?paged=1(分页): 列表页无限滚动用, 返回 {items, hasMore}, 并带 X-Total-Count 头
+// 两者都不返回两张大 base64(列表永远轻量, 图走 /uploads 静态)。
+// P3 分页: ?paged=1&offset=&limit= (limit 默认 30, 上限 100)
 router.get('/', async (req, res) => {
   try {
     const { childId, subject } = req.query
+    const paged = req.query.paged === '1' || req.query.paged === 'true'
+    const offset = Math.max(0, parseInt(req.query.offset, 10) || 0)
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 30))
+
     if (isMemoryDB()) {
-      const list = listErrorsOf(req.userId, { childId, subject })
+      let list = listErrorsOf(req.userId, { childId, subject })
       list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-      return res.json(list)
+      if (!paged) return res.json(list)
+      const total = list.length
+      const items = list.slice(offset, offset + limit)
+      res.set('X-Total-Count', String(total))
+      return res.json({ items, hasMore: offset + items.length < total, total, offset, limit })
     }
+
     const childFilter = { ownerId: req.userId }
     if (childId) childFilter._id = childId
     const childIds = await Child.find(childFilter).distinct('_id')
@@ -58,8 +72,20 @@ router.get('/', async (req, res) => {
     // v44 P0: 列表不返回两张大 base64 图(imageBase64/figureBase64 各 300KB~2MB),
     // 否则错题多时列表 JSON 膨胀到数 MB, 公网拉取慢。缩略图走 imageUrl(/uploads 静态, 可缓存)。
     // 手写字段 handwritingSvg 是 SVG(小), 详情页需要, 保留。
-    const errors = await ErrorQuestion.find(filter).select('-imageBase64 -figureBase64').sort({ createdAt: -1 })
-    res.json(errors)
+    const query = ErrorQuestion.find(filter).select('-imageBase64 -figureBase64').sort({ createdAt: -1 })
+
+    if (!paged) {
+      const errors = await query
+      res.json(errors)
+      return
+    }
+    // P3 分页: skip/limit + 一次 count(索引 {childId, createdAt} 覆盖排序, 开销可控)
+    const [items, total] = await Promise.all([
+      query.skip(offset).limit(limit),
+      ErrorQuestion.countDocuments(filter),
+    ])
+    res.set('X-Total-Count', String(total))
+    res.json({ items, hasMore: offset + items.length < total, total, offset, limit })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -97,18 +123,19 @@ router.get('/:id', async (req, res) => {
     // full=1 → 全量(含 imageBase64/figureBase64, 供详情页 AI 讲解喂图);
     // 默认 → 投影排除两张大 base64, 首屏缩略图只需 imageUrl(轻量, 可缓存)。
     const full = req.query.full === '1' || req.query.full === 'true'
+    const select = full ? undefined : '-imageBase64 -figureBase64'
     if (isMemoryDB()) {
       const err = getErrorOf(req.userId, req.params.id)
       if (!err) return res.status(404).json({ error: '错题不存在' })
       if (full) return res.json(err)
       return res.json({ ...err, imageBase64: undefined, figureBase64: undefined })
     }
-    const err = await ErrorQuestion.findById(req.params.id)
+    const err = await ErrorQuestion.findById(req.params.id).select(select)
     if (!err) return res.status(404).json({ error: '错题不存在' })
     // 权限校验
     const child = await Child.findOne({ _id: err.childId, ownerId: req.userId })
     if (!child) return res.status(403).json({ error: '无权访问该错题' })
-    res.json(full ? err : { ...err, imageBase64: undefined, figureBase64: undefined })
+    res.json(err)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

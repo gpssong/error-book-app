@@ -233,6 +233,17 @@ const api = {
     const qs = new URLSearchParams(params as Record<string, string>).toString()
     return request<ErrorItem[]>(`/errors${qs ? `?${qs}` : ''}`)
   },
+  // P3 分页: 列表页无限滚动。paged=1 返回 { items, hasMore, total }, 不带 base64。
+  getErrorsPage: (params: { childId?: string; subject?: string; offset: number; limit?: number }) => {
+    const qs = new URLSearchParams({
+      childId: params.childId ?? '',
+      subject: params.subject ?? '',
+      paged: '1',
+      offset: String(params.offset),
+      limit: String(params.limit ?? 30),
+    }).toString()
+    return request<{ items: ErrorItem[]; hasMore: boolean; total: number }>(`/errors?${qs}`)
+  },
   getError: (id: string) => request<ErrorItem>(`/errors/${id}`),
   // v44 P1: 全量详情(含 imageBase64/figureBase64, 供详情页 AI 讲解多模态喂图)
   getErrorFull: (id: string) => request<ErrorItem>(`/errors/${id}?full=1`),
