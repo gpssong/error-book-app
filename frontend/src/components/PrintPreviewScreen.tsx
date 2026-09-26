@@ -13,6 +13,7 @@ import LatexPreview from '@/components/LatexPreview'
 import type { Subject } from '@/stores/api'
 import type { SimilarQuestion } from '@/stores/api'
 import { sliceSimilarQuestions, DEFAULT_SIMILAR_COUNT } from '@/utils/sliceSimilarQuestions'
+import { resolveImageUrl } from '@/stores/api'
 import { Capacitor } from '@capacitor/core'
 import { Printer } from '@dimer47/capacitor-plugin-printer'
 
@@ -324,8 +325,23 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
                         <span className="text-[9px] text-slate-400 font-600">{err.knowledgePoint}</span>
                       </div>
                       <div
-                        className={`bg-slate-50 px-2 py-2 print:p-3 ${printLayout === '2列' ? 'min-h-[96px] max-h-[96px] print:max-h-none' : 'min-h-[120px] max-h-[240px] print:max-h-none'}`}
+                        className={`px-2 py-2 print:p-3 ${printLayout === '2列' ? 'min-h-[120px] max-h-[200px] print:max-h-none' : 'min-h-[160px] max-h-[280px] print:max-h-none'}`}
                       >
+                        {/* v47+: 题图(用户 regionSelect 裁出的题图,本身就含文字 + 示意图)。
+                           必须显示 —— 几何/物理题没有题图孩子根本看不懂。
+                           优先 imageUrl(轻量静态图,可缓存); 缺失时回退 base64。
+                           max-h 控制版式, object-contain 保证完整显示(不裁切)。 */}
+                        {(err.imageUrl || err.imageBase64) && (
+                          <img
+                            src={resolveImageUrl(err.imageUrl || err.imageBase64)}
+                            alt={err.title}
+                            className={`w-full object-contain rounded-md bg-slate-50 border border-slate-100 mb-2 print:mb-2 ${
+                              printLayout === '2列'
+                                ? 'max-h-[100px] print:max-h-[160px]'
+                                : 'max-h-[160px] print:max-h-[240px]'
+                            }`}
+                          />
+                        )}
                         {err.textContent ? (
                           <LatexPreview
                             text={err.textContent}

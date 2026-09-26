@@ -1,5 +1,39 @@
 # Changelog
 
+## v47.1 (2026-09-26) - 打印预览页缺题图 hotfix
+
+### 背景
+
+v47 修了录入完成页 + 详情页,但**没碰打印预览页** —— 用户真机截图(2026-09-26)显示
+「天天错题本」打印预览页里:**题图完全没渲染,只看到 A/B/C/D 选项 + 文字题干**。
+孩子打出来做题没有图,几何/物理题完全看不懂。
+
+**根因**:`PrintPreviewScreen.tsx:326-337` 的题卡(L317)只渲染了 `<LatexPreview text={err.textContent}>`,
+**完全没读 `err.imageUrl` / `err.imageBase64`**。v44 图片静态化后 `imageUrl` 几乎 100% 有值,
+但打印页代码停留在 v44 之前,从未渲染过图。
+
+### 改动(1 文件,17 行)
+
+| 类别 | 文件 | 内容 |
+|---|---|---|
+| **修复** | `frontend/src/components/PrintPreviewScreen.tsx` | L326 改成在 `LatexPreview` **上方**插入题图 `<img src={resolveImageUrl(err.imageUrl || err.imageBase64)}>`,`object-contain` + `border` + `bg-slate-50` + 2列 `max-h-[100px]` / 1列 `max-h-[160px]`(`print:` 加倍);同步改容器 `min-h/max-h` 让图 + 文字都不被压扁 |
+
+### 设计决策
+
+- **优先 `imageUrl`**(轻量静态 URL,可缓存),缺失时回退 `imageBase64`(老数据兜底) —— 顺序与详情页一致
+- **`object-contain` 而非 `object-cover`**:题图含文字,必须完整显示;且容器 `max-h-[100px]` / `[160px]` 比 v47 详情页 `max-h-72` 小,几何图可能只显示 1/3 但**能看清文字 + 看到图**
+- **2 列与 1 列给不同高度**:1 列 `max-h-160` 给图更大空间,2 列 `max-h-100` 不挤压文字
+- **不动 v47 已部署的代码**:只改打印页,前端 chunk `index-Cs8KLGtX.js`
+
+### 验证
+
+- 前端 `pnpm typecheck` ✓ / `pnpm build` ✓(chunk `index-Cs8KLGtX.js` 611412 bytes)
+- 飞牛 dist 部署:`curl http://192.168.0.32:4040/assets/index-Cs8KLGtX.js` → HTTP 200 / 611412 bytes(grep `imageBase64` ×16)
+- 容器内 `/usr/share/nginx/html` bind-mount 重启后刷新(`error-book-nginx restart`,v44 P2 老坑)
+- APK `error-book-v47.1-print-figure.apk`(5.8MB)→ 飞牛同步盘 + 本地 `apk/`
+
+---
+
 ## v47 (2026-09-26) - 题目插图回归(录入完成页图预览 + 详情页主图完整显示 + figureRegion fallback)
 
 ### 背景
