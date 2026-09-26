@@ -302,9 +302,28 @@ async function callTextAPI({ apiKey, baseUrl, model, textPrompt }) {
 }
 
 // ─── MiniMax Anthropic Messages 协议调用（anthropic-version 头）────────────
-async function callAnthropicAPI({ apiKey, baseUrl, model, textPrompt, systemPrompt }) {
+async function callAnthropicAPI({ apiKey, baseUrl, model, textPrompt, systemPrompt, imageBase64 }) {
   // baseUrl 默认形如 https://api.minimaxi.com/anthropic,我们 POST {baseUrl}/v1/messages
+  // 2026-09-26: 加 imageBase64 可选参数,vision 场景走 Anthropic Messages image block 协议
+  // 之前 visionFallback 用 callVisionAPI(OpenAI 协议 /chat/completions) 调 MiniMax → 404,
+  // 因为 MiniMax 走 Anthropic Messages 协议,没 OpenAI 兼容端点
   const url = baseUrl.replace(/\/$/, '') + '/v1/messages'
+
+  // 构造 messages[0].content: 支持 text-only 或 text + image
+  const userContent = imageBase64
+    ? [
+        { type: 'text', text: textPrompt },
+        // Anthropic image block: { type: 'image', source: { type: 'base64', media_type, data } }
+        ...(typeof imageBase64 === 'string' && imageBase64.startsWith('data:')
+          ? (() => {
+              const m = imageBase64.match(/^data:image\/(\w+);base64,(.+)$/)
+              if (!m) return []
+              return [{ type: 'image', source: { type: 'base64', media_type: `image/${m[1]}`, data: m[2] } }]
+            })()
+          : []),
+      ]
+    : textPrompt
+
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -316,7 +335,7 @@ async function callAnthropicAPI({ apiKey, baseUrl, model, textPrompt, systemProm
       model,
       max_tokens: 1500,
       system: systemPrompt || '你是一位严谨的中学教师,擅长把 OCR 碎片化的题目还原成结构化 JSON。',
-      messages: [{ role: 'user', content: textPrompt }],
+      messages: [{ role: 'user', content: userContent }],
       temperature: 0.1,
     }),
   })
@@ -390,13 +409,16 @@ ${formulaSection}
   }
 
   // 备选 MiniMax-M3
+  // 2026-09-26: 改用 callAnthropicAPI(Anthropic Messages 协议 + image block),
+  // 之前用 callVisionAPI(OpenAI /chat/completions 协议) MiniMax 不支持 → 404
   if (MINIMAX_KEY) {
     try {
-      const result = await callVisionAPI({
+      const result = await callAnthropicAPI({
         apiKey: MINIMAX_KEY,
         baseUrl: MINIMAX_BASE,
         model: MINIMAX_MODEL,
         textPrompt: userPrompt,
+        systemPrompt: SYSTEM_PROMPT,
         imageBase64,
       })
       const parsed = extractJSON(result)
@@ -406,7 +428,7 @@ ${formulaSection}
     }
   }
 
-  throw new Error('视觉兜底未配置可用 API Key')
+  throw new Error('视觉兜底所有 provider 失败(Agnes 欠费/MiniMax 调用异常);可手动输入或重试')
 }
 
 // ─── 工具函数 ──────────────────────────────────────────────────────────────
