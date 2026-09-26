@@ -242,9 +242,12 @@ v12 时代前端按用户选定的 `subject` 入错题,LLM OCR 解析出的知�
 sshpass -p '850225sonG' scp -r backend/src/ gpssong@192.168.0.32:/tmp/eb-src/
 
 # 2. 在 NAS 上重建 backend 镜像并重启
+#    ⚠️ 必须先 rm -rf 旧 src 再整体拷 /tmp/eb-src(它=src 内容), 否则 src/src 嵌套 → 镜像崩溃
 sshpass -p '850225sonG' ssh gpssong@192.168.0.32 \
   'echo "850225sonG" | sudo -S -p "" bash -c "\
-     cd /volume1/docker/error-book && \
+     cd /vol1/1000/docker/error-book && \
+     rm -rf backend/src && cp -r /tmp/eb-src backend/src && \
+     test -f backend/src/index.js && \
      docker build -t error-book-backend ./backend && \
      docker compose up -d backend"'
 
@@ -424,6 +427,10 @@ curl -6 -s 'http://[240e:390:88f6:c681::3f3]:4040/api/ocr/status'
 - **AGP 8.13 + Capacitor 6 plugin 漏装**: 新装 `@capacitor/X` 后,APK 里可能搜不到 X 的 plugin 类,需手动 `./gradlew :capacitor-X:assembleDebug` 单独跑一遍触发 aar 产出,再删 `.gradle` 和 `app/build` 后重 build app
 - **`dimer47-capacitor-plugin-printer` Kotlin JVM 21 冲突**: 插件自带 build.gradle 写死 `JvmTarget.JVM_21`,直接 sed 改 `node_modules/.../android/build.gradle` 的 `JvmTarget.JVM_21` → `JvmTarget.JVM_17`(pnpm 源,cap sync 不重写)
 - **飞牛 nginx 挂载偶发失效**: 容器内 `ls /usr/share/nginx/html` 偶发 total 0,根因是挂载 race condition。docker-compose 已加 healthcheck 自动重启,部署脚本也加了 `nginx -s reload`
+- **`scp` + `cp -r` 造成 `src/src` 嵌套 → 镜像崩溃(v44/v45 各踩一次)**: `scp -r backend/src/ nas:/tmp/eb-src/` 后 `/tmp/eb-src/` 是 **src 的内容**(没有再套一层 `src`);但部署脚本里 `cp -r /tmp/eb-src $PWD/backend/src` 又会把这份内容当整体拷进 `backend/src/` 下,得到 `backend/src/src/index.js`。Dockerfile `COPY . .` 把嵌套烤进镜像,容器启动 `Cannot find module '/app/src/index.js'` → 反复 `Restarting (1)`。**正确写法**:`rm -rf $PWD/backend/src && cp -r /tmp/eb-src $PWD/backend/src`(先删目标再整体拷),或用 `rsync -a /tmp/eb-src/ $PWD/backend/src/`(尾斜杠=拷内容)。**校验**:build 前 `test -f $PWD/backend/src/index.js`,没有就说明又嵌套了
+- **backend 重建期 nginx reload 会 `host not found in upstream "backend"`**: `nginx -s reload` 会重新解析 `backend` 主机名,若此刻 backend 正在 recreate(短暂不可达)就报错。等 `docker ps` 显示 `error-book-backend: Up` 后**再** reload 即可,重试一次就通,不影响数据
+- **zsh brace 展开 `{a,b,c}` 在脚本里会炸字面量**: 部署脚本写 `rm ... src/{routes,schemas,services}` 时 zsh 不展开(非交互 shell),会建/删一个字面叫 `{routes,schemas,services}` 的目录,残留还会被 `COPY . .` 带进镜像。目录清理用 `for` 循环或 glob,别用 brace
+- **容器内没有 `curl`/`wget`**: 飞牛 backend/nginx 镜像是精简 node/alpine,`docker exec ... curl` 会 `executable file not found`。健康检查从**宿主机** `curl -6 http://error.93gushi.com:4040/...` 或 `curl -6 http://[<feiniu-v6>]:4040/...` 打,别在容器里 curl;也别 `set -e` + 容器内 curl(会中途 abort 后续健康检查)
 
 ## License
 
