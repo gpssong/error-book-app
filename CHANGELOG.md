@@ -1,5 +1,56 @@
 # Changelog
 
+## v47 (2026-09-26) - 题目插图回归(录入完成页图预览 + 详情页主图完整显示 + figureRegion fallback)
+
+### 背景
+
+拍一道含示意图的题(立方体 ABCD-EFGH 几何题,2026-09-26 用户截图),文字被 OCR 正确识别,但**录入完成页(录入明细)只显示文字,完全看不到图**。孩子必须跳详情页才能看完整原图。
+
+**关键事实**(生产 73 条错题统计):
+- `imageUrl/imageBase64` **100% 有值**(用户在 regionSelect 阶段手动框选裁出来的题图,本身已含文字 + 图)
+- `figureBase64` 非空率仅 **1.4%**(73 条里 1 条)—— 几何立体图命中率极低
+- `ErrorDetailScreen.tsx:302` 顶部主图已渲染 `displayImageUrl`,但 `object-cover h-48` 比例太扁,看起来"图没了"
+- `LatexPreview` 只渲染公式,不渲染图 → 录入明细没图
+
+**根因(3 层)**:
+1. **P0 录入完成页不可见**:`batchResult` 只渲染 `LatexPreview`(纯公式),题图被丢掉
+2. **P1 详情页主图被裁切**:`object-cover h-48` 把含文字的题图裁成封面,看不清
+3. **P2 后端 figureRegion 不可靠**:视觉模型自己输出 bbox,几何立体图经常输出空串 → figureBase64 命中失败
+
+### 改动(5 文件,~220 行)
+
+| 类别 | 文件 | 内容 |
+|---|---|---|
+| **P0 前端 - 录入完成页显示题图** | `CameraScreen.tsx` | state 扩 `croppedUrls: string[]`;`batchResult` 在 LatexPreview 下方加 grid 缩略图(`max-h-40 object-contain`)+ 全屏 Modal(点黑色背景关闭 + 关闭按钮);点击缩略图放大原图 |
+| **P1 后端 - figureRegion fallback** | `backend/src/pipeline/textExtract.js` | 新增纯函数 `figureRegionFromTextPositions`:polygon → bbox → 合并 → 100×100 网格 flood-fill 求最大连通块,返回 `{x,y,w,h}`;**2 个阈值**:文字密度 > 80%(纯文字题)/ 补集 < 15% / 补集 > 92% 一律返回 null;边框强制 occupied 防止文字贴边误判 |
+| **P1 后端 - textin 公式端点补 position** | `backend/src/services/textin.js:153` | 公式识别结果新增 `position: l.position \|\| []` 字段(文字端点已有,公式端点之前漏了) |
+| **P1 后端 - ocr 路由接入** | `backend/src/routes/ocr.js` | 提取 `textPositions + formulaPositions`(L116-117),新增 `fallbackFigureRegion()` 内嵌函数;5 处 `figureRegion: <X>.figureRegion \|\| ''` 改为 `\|\| fallbackFigureRegion()`(L178/212/280/304/374) |
+| **P3 前端 - 详情页主图完整显示** | `ErrorDetailScreen.tsx` | 主图 `object-cover h-48` → `object-contain max-h-72 bg-slate-50`(题图含文字必须看清);删「独立题目插图卡片」(figureBase64 命中率 1.4%,主图已含图);主图下方加「如题图不全,可点批注涂抹后重新框选」提示 |
+
+### 设计决策
+
+- **不显示独立"插图卡片"**:用户决策。统一显示主图(`imageUrl`),把视觉复杂度降下来。
+- **后端 fallback 优于 prompt 调优**:TextIn `lines[].position` 是**真实坐标**(不是模型猜的),bbox 合并后补集 = 候选示意图。视觉模型 prompt 即使加 1-shot 也只能把命中率从 1.4% 提到 3-5%,而 fallback 预期 50%+。
+- **边框强制 occupied**:防止文字贴边时把边框空白误判为插图(测试场景1)
+- **2 阈值 + 文字密度**:避免纯文字题被误判(全图 80%+ 是文字 → 拒绝)、补集太大误判(>92% → 拒绝)、补集太小误判(<15% → 拒绝)
+- **2 个全屏 Modal 模式**(不是抽通用 ImageViewer):场景特殊(纯图片 + 黑底 + 关按钮),直接内联 15 行最简单
+- **不引入新依赖**:纯 in-memory 几何运算,无 sharp / jimp
+
+### 验证
+
+- 后端 `pnpm test` **58/58 通过**(原 50 + 新 8 figureRegionFromTextPositions)
+- 后端 `pnpm lint` **0 error / 11 warning**(存量 unused var,无新增)
+- 前端 `pnpm test` **17/17 通过**(LatexPreview 9 条 + 通用测试,无新增)
+- 前端 `pnpm typecheck` ✓ / `pnpm build` ✓(chunk `index-DJcXzRko.js` 611KB)
+- 8 条新增测试覆盖:空数组 / 文字占满整图 / 半边空白 / 右侧空白 / 四角空白 / 文字稀疏 / 坏数据容错 / 归一化范围
+
+### 待办(可选)
+
+- v48+:visionFallback prompt 加 1-shot 示例,把模型自输出 figureRegion 命中率从 1.4% 提到 3-5%(已不是必需,fallback 兜底足够)
+- 实测生产 figureBase64 命中率增长(预期 ≥30%,需 Mongo 统计)
+
+---
+
 ## v46.1 (2026-09-26) - LatexPreview 裸 LaTeX 自动识别(录入明细数学公式渲染)
 
 ### 背景
