@@ -431,6 +431,82 @@ ${formulaSection}
   throw new Error('视觉兜底所有 provider 失败(Agnes 欠费/MiniMax 调用异常);可手动输入或重试')
 }
 
+/**
+ * extractFigureRegion - 用视觉模型单独求「题目示意图」的包围盒(v48.2)
+ *
+ * 背景: refine-figure 走 TextIn recognizeText bbox + figureRegionFromTextPositions
+ * (补集/包围启发式)求 figureRegion。对「图夹在题干+ABCD 选项中间」的几何/立体题,
+ * 启发式会返回 no-figure-region(行间缝隙被误判)。此时改用视觉模型直接看图
+ * 找图 bbox(比启发式准),作为 refine 的兜底。
+ *
+ * 与 visionFallback 的区别:
+ *   - visionFallback 提取「整道题」(title/textContent/figureRegion 一锅出),
+ *     figureRegion 只是附带字段
+ *   - 本函数**只做一件事**: 在图中定位关键示意图,返回归一化 {x,y,w,h} 或 ''
+ *   - prompt 更聚焦,模型注意力全在"找图", 命中几何/物理/化学结构图更稳
+ *
+ * 实现: 复用 callVisionAPI(Agnes vision)→ callAnthropicAPI(MiniMax) 两级 provider,
+ * 与 visionFallback 一致的降级链。
+ */
+export async function extractFigureRegion({ imageBase64, subject = '数学' }) {
+  const prompt = `# 任务
+这张图是一道${subject}题。请**只在图中定位题目里印刷的示意图/关键图形**(几何立体图、物理装置图、化学结构式、坐标系函数图像、表格配图、电路图等)。
+
+- 如果题目确实包含这样一张示意图,输出它在**整张图**中的归一化包围盒:
+  {"x":0.5,"y":0.1,"w":0.4,"h":0.6}(x/y/w/h 都在 [0,1],x/y 是左上角,w/h 是宽高)
+- 包围盒要**完整包住图本身**(连同图上的字母/数字标注),不要切到题干文字或选项。
+- 如果整张图里**没有**任何示意图(纯文字题 / 只有题干和选项),输出空字符串 ""
+
+严格只返回一个 JSON,不要任何解释:
+{ "figureRegion": "{\"x\":0.5,\"y\":0.1,\"w\":0.4,\"h\":0.6}" }`
+
+  // 1) Agnes vision(VISION_MODEL,已切到有余量的 agnes-2.5-flash)
+  if (AGNES_KEY) {
+    try {
+      const raw = await callVisionAPI({
+        apiKey: AGNES_KEY,
+        baseUrl: AGNES_BASE,
+        model: AGNES_VISION,
+        textPrompt: prompt,
+        imageBase64,
+      })
+      const parsed = extractJSON(raw)
+      const region = normalizeFigureRegion(parsed?.figureRegion ?? '')
+      if (region) {
+        console.log(`[extractFigureRegion] Agnes vision 命中: ${JSON.stringify(region)}`)
+        return region
+      }
+      console.log(`[extractFigureRegion] Agnes vision 未命中(图内无示意图或解析失败)`)
+    } catch (err) {
+      console.warn('[extractFigureRegion] Agnes vision 失败, 降级 MiniMax:', err.message)
+    }
+  }
+
+  // 2) MiniMax 兜底(Anthropic 协议)
+  if (MINIMAX_KEY) {
+    try {
+      const raw = await callAnthropicAPI({
+        apiKey: MINIMAX_KEY,
+        baseUrl: MINIMAX_BASE,
+        model: MINIMAX_MODEL,
+        textPrompt: prompt,
+        systemPrompt: '你是严格的几何识别模型,只返回 JSON。',
+        imageBase64,
+      })
+      const parsed = extractJSON(raw)
+      const region = normalizeFigureRegion(parsed?.figureRegion ?? '')
+      if (region) {
+        console.log(`[extractFigureRegion] MiniMax 命中: ${JSON.stringify(region)}`)
+        return region
+      }
+    } catch (err) {
+      console.warn('[extractFigureRegion] MiniMax 失败:', err.message)
+    }
+  }
+
+  return ''  // 视觉模型也提不出图 → 让上游兜底
+}
+
 // ─── 工具函数 ──────────────────────────────────────────────────────────────
 function normalizeParsed(p) {
   return {

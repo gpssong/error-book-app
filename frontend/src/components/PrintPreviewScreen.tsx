@@ -72,18 +72,21 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
     ;(async () => {
       for (const id of missing) {
         if (cancelled) return
+        let fig = ''
         try {
           const f = await api.getErrorFigure(id)
-          if (cancelled) return
-          setFigureMap((m) => {
-            const next = { ...m }
-            next[id] = f.figureBase64 || f.figureImageUrl || null
-            return next
-          })
+          fig = f.figureBase64 || f.figureImageUrl || ''
         } catch {
-          if (cancelled) return
-          setFigureMap((m) => ({ ...m, [id]: null }))
+          /* 拉图失败, 继续走 refine */
         }
+        // v48.2: 库里没示意图的题(figureBase64/figureImageUrl 都空) → 自动调 refine-figure 出图
+        // refine 后端: 启发式(TextIn bbox)提不出时, 视觉模型(agnes-2.5-flash)兜底找图 bbox。
+        // 成功后写 refineMap, 渲染走 clip-path; 失败则保持题照兜底(用户仍可手动点「提取示意图」)。
+        if (!fig) {
+          handleRefine(id) // fire-and-forget; 结果进 refineMap, 不影响 figureMap 渲染
+        }
+        if (cancelled) return
+        setFigureMap((m) => ({ ...m, [id]: fig || null }))
       }
     })()
     return () => { cancelled = true }

@@ -333,10 +333,26 @@ router.post('/:id/refine-figure', async (req, res) => {
     // 5) 用识别 bbox 求示意图区域(优先去手写后的图,缺则用原图 bbox)
     const textLines = textResult.value.lines
     const positions = textLines.map((l) => l.position).filter((p) => Array.isArray(p) && p.length === 8)
-    if (positions.length < 2) {
-      return res.json({ refined: false, reason: 'no-text-bbox' })
+    let region = null
+    if (positions.length >= 2) {
+      region = figureRegionFromTextPositions(positions, 1, 1)
     }
-    const region = figureRegionFromTextPositions(positions, 1, 1)
+    // 5b) v48.2: 启发式(补集/文字包围)提不出图时, 改用视觉模型直接看图找图 bbox
+    //     对「图夹在题干+ABCD 选项中间」的几何/立体题, 启发式常 no-figure-region,
+    //     视觉模型(agnes-2.5-flash)命中更稳。视觉也失败 → 保留 no-figure-region。
+    if (!region) {
+      try {
+        const { extractFigureRegion } = await import('../services/minimax.js')
+        const dataUrl = `data:image/jpeg;base64,${cleanBase64}`
+        const visionRegion = await extractFigureRegion({ imageBase64: dataUrl, subject: err.subject || '数学' })
+        if (visionRegion && visionRegion.x !== undefined) {
+          region = visionRegion
+          console.log(`[refine-figure] 视觉模型兜底命中 region: ${JSON.stringify(region)}`)
+        }
+      } catch (e) {
+        console.warn('[refine-figure] 视觉模型兜底失败, 用启发式结果:', e.message)
+      }
+    }
     if (!region) {
       return res.json({ refined: false, reason: 'no-figure-region' })
     }
