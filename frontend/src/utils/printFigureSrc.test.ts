@@ -77,4 +77,39 @@ describe('pickPrintFigure — 打印题卡示意图选取 (v48.2)', () => {
     expect(r.kind).toBe('photo')
     expect(r.src).toBe('/uploads/photo.jpg')
   })
+
+  // ─── v48.3 新增: figureRegion 持久化路径 ──────────────────────────
+  it('v48.3 核心: 库里有 figureImageUrl + figureRegion(持久化) → 出 figure + region 走 clip-path', () => {
+    const region = { x: 0.6, y: 0.05, w: 0.35, h: 0.6 }
+    const r = pickPrintFigure(
+      { ...PHOTO, figureImageUrl: '/uploads/fig.jpg', figureRegion: region },
+      undefined, undefined,
+    )
+    expect(r.kind).toBe('figure')
+    expect(r.src).toBe('/uploads/fig.jpg')
+    expect(r.region).toEqual(region)
+  })
+
+  it('v48.3: figureImageUrl 在但 figureRegion 缺失 → 出 figure 不带 region(老数据兼容)', () => {
+    const r = pickPrintFigure(
+      { ...PHOTO, figureImageUrl: '/uploads/fig.jpg' },
+      undefined, undefined,
+    )
+    expect(r.kind).toBe('figure')
+    expect(r.src).toBe('/uploads/fig.jpg')
+    expect(r.region).toBeUndefined()
+  })
+
+  it('v48.3 优先级: refine 本地 region 优先于持久化 figureRegion', () => {
+    const refinedRegion = { x: 0.1, y: 0.2, w: 0.3, h: 0.4 }
+    const persistedRegion = { x: 0.5, y: 0.5, w: 0.2, h: 0.2 }
+    const r = pickPrintFigure(
+      { ...PHOTO, figureImageUrl: '/uploads/fig.jpg', figureRegion: persistedRegion },
+      { refined: true, figureImageUrl: '/uploads/refined.jpg', region: refinedRegion, loading: false },
+      undefined,
+    )
+    expect(r.kind).toBe('refined')
+    expect(r.src).toBe('/uploads/refined.jpg')
+    expect(r.region).toEqual(refinedRegion)
+  })
 })

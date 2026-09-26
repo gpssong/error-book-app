@@ -62,6 +62,12 @@ export const errorQuestionSchema = new mongoose.Schema(
     figureBase64: { type: String, default: '' },
     // v44: 图片静态化 —— 主图/插图落盘 /uploads 后,库里存 URL(可缓存),base64 字段清空
     figureImageUrl: { type: String, default: '' },
+    // v48.3: refine-figure 持久化的归一化 region {x,y,w,h}, 让打印页走 clip-path,
+    // 即使没在当前 session 重新 refine 也能精确显示示意图部分(eraseHandwriting 失败时关键)
+    figureRegion: {
+      type: { x: Number, y: Number, w: Number, h: Number },
+      default: undefined,
+    },
   },
   { timestamps: true }
 )
@@ -105,6 +111,8 @@ export function createMemoryError(payload, childId) {
     totalPages:   payload.totalPages ?? 0,
     splitGroupId: payload.splitGroupId ?? '',
     figureBase64: payload.figureBase64 ?? '',
+    figureImageUrl: payload.figureImageUrl ?? '',
+    figureRegion: payload.figureRegion,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }

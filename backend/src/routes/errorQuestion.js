@@ -122,23 +122,33 @@ router.get('/:id/image', async (req, res) => {
   }
 })
 
-// ─── 取示意图(v48.2):按需返回 figureBase64/figureImageUrl ────────────────────
+// ─── 取示意图(v48.2 / v48.3):按需返回 figureBase64/figureImageUrl/figureRegion ─
 // 背景: 列表接口 GET /errors 做 .select('-imageBase64 -figureBase64') 剥离大 base64,
 // 导致打印页(AppContext.errors 来自列表)永远拿不到 figureBase64 → 含图题打印时
 // fallback 到 imageUrl(整张题照)而非 figureBase64(原书示意图)。
 // 本端点按需返回单条的示意图(可能 30KB+ 的 base64),打印页对选中题逐个懒加载。
+// v48.3: 同时返回 figureRegion (refine-figure 持久化的归一化 bbox), 让 pickPrintFigure
+// 在列表里拿到 figureImageUrl 后也能直接走 clip-path, 不必每次 session 都重 refine。
 router.get('/:id/figure', async (req, res) => {
   try {
     if (isMemoryDB()) {
       const err = getErrorOf(req.userId, req.params.id)
       if (!err) return res.status(404).json({ error: '错题不存在' })
-      return res.json({ figureImageUrl: err.figureImageUrl || '', figureBase64: err.figureBase64 || '' })
+      return res.json({
+        figureImageUrl: err.figureImageUrl || '',
+        figureBase64: err.figureBase64 || '',
+        figureRegion: err.figureRegion || null,
+      })
     }
     const err = await ErrorQuestion.findById(req.params.id)
     if (!err) return res.status(404).json({ error: '错题不存在' })
     const child = await Child.findOne({ _id: err.childId, ownerId: req.userId })
     if (!child) return res.status(403).json({ error: '无权访问' })
-    return res.json({ figureImageUrl: err.figureImageUrl || '', figureBase64: err.figureBase64 || '' })
+    return res.json({
+      figureImageUrl: err.figureImageUrl || '',
+      figureBase64: err.figureBase64 || '',
+      figureRegion: err.figureRegion || null,
+    })
   } catch (err) {
     console.error('[figure] 异常:', err)
     res.status(500).json({ error: err.message })
@@ -281,26 +291,33 @@ router.patch('/:id/ai-analysis', async (req, res) => {
 // 被 regionSelect 部分裁掉导致只显示一角。用户在打印预览页发现图不全,
 // 点此端点:取整张原照(imageBase64)→ TextIn eraseHandwriting 去手写
 // → recognizeText 拿真实 bbox → figureRegionFromTextPositions 求最大空白
-// → 扩边 10% → sharp/jimp 裁剪 → 落盘 /uploads/fig-{id}.jpg → 写库 figureImageUrl
+// → 扩边 10% → 落盘 /uploads/fig-{id}.jpg → 写库 figureImageUrl
 //
 // 入参: 无 (从 URL :id 取错题)
 // 出参: { refined: true, figureImageUrl: '/uploads/fig-xxx.jpg' }
 //       或 { refined: false, reason: 'no-image'|'no-textin'|'no-figure' }
+//
+// v48.3 重要变更: eraseHandwriting 失败时(返回「无图片数据」), 不再落盘带手写的整张原照
+//   (用户截图里图"脏"就是这个原因)。改为复用 err.imageUrl(本来就是用户原照, 静态化 URL)
+//   作 figureImageUrl, 仅靠 region 在前端 clip-path 抠出示意图部分。手写原本就在原照外,
+//   抠 region 后图本身没有手写。这避免了 +40MB 的 sharp/jimp 依赖, 也不浪费磁盘。
 router.post('/:id/refine-figure', async (req, res) => {
   const start = Date.now()
   try {
-    // 1) 加载错题(内存/Mongo 都支持)
-    let err, imageBase64
+    // 1) 加载错题(内存/Mongo 都支持) + 提取 imageUrl
+    let err, imageBase64, imageUrl
     if (isMemoryDB()) {
       err = getErrorOf(req.userId, req.params.id)
       if (!err) return res.status(404).json({ error: '错题不存在' })
       imageBase64 = err.imageBase64
+      imageUrl = err.imageUrl
     } else {
       err = await ErrorQuestion.findById(req.params.id)
       if (!err) return res.status(404).json({ error: '错题不存在' })
       const child = await Child.findOne({ _id: err.childId, ownerId: req.userId })
       if (!child) return res.status(403).json({ error: '无权访问' })
       imageBase64 = err.imageBase64
+      imageUrl = err.imageUrl
     }
     if (!imageBase64) {
       return res.json({ refined: false, reason: 'no-image' })
@@ -324,7 +341,7 @@ router.post('/:id/refine-figure', async (req, res) => {
       recognizeText(imageBuffer, { recognize_graphics: 1 }),
     ])
     if (eraseResult.status === 'rejected') {
-      console.warn('[refine-figure] eraseHandwriting 失败,用原图继续:', eraseResult.reason?.message)
+      console.warn('[refine-figure] eraseHandwriting 失败, 用原图继续:', eraseResult.reason?.message)
     }
     if (textResult.status === 'rejected') {
       return res.json({ refined: false, reason: 'recognize-failed', detail: textResult.reason?.message })
@@ -334,8 +351,16 @@ router.post('/:id/refine-figure', async (req, res) => {
     const textLines = textResult.value.lines
     const positions = textLines.map((l) => l.position).filter((p) => Array.isArray(p) && p.length === 8)
     let region = null
+    // v48.3: 启发式返回的 region area > 0.55 → 视为"太大"(可能是补集法 fallback 到整图空白, 或图本身很小被 padding 撑大), 落视觉兜底
+    let heuristicArea = 0
     if (positions.length >= 2) {
-      region = figureRegionFromTextPositions(positions, 1, 1)
+      const heuristic = figureRegionFromTextPositions(positions, 1, 1)
+      if (heuristic) {
+        heuristicArea = heuristic.w * heuristic.h
+        if (heuristicArea >= 0.02 && heuristicArea <= 0.55) {
+          region = heuristic
+        }
+      }
     }
     // 5b) v48.2: 启发式(补集/文字包围)提不出图时, 改用视觉模型直接看图找图 bbox
     //     对「图夹在题干+ABCD 选项中间」的几何/立体题, 启发式常 no-figure-region,
@@ -357,43 +382,59 @@ router.post('/:id/refine-figure', async (req, res) => {
       return res.json({ refined: false, reason: 'no-figure-region' })
     }
 
-    // 6) 在去手写后的图上裁剪 region + 扩边 10%(让图更全)
-    //    v48 设计决策(不引入 sharp/jimp):
-    //    - sharp 是 libvips 绑定,镜像 +40MB,且 Dockerfile 不在 repo(无法本地构建)
-    //    - 用纯 JS 抠像素太慢,且 jimp 也引几十 MB
-    //    - 折中:后端落盘「去手写后的整张图」(figureImageUrl 指这图)
-    //    - 同时返回 region 坐标(归一化 {x,y,w,h})
-    //    - 前端拿到后用 CSS clip-path: inset(top right bottom left)
-    //      在 <img> 上按 region 渲染,只显示示意图部分(去手写背景+白底)
-    //    - 打印时 printer 截图截的是 <img> 实际可见区域 → 包含完整示意图
-    //    后续(v49+):若 Dockerfile 移进 repo,可加 sharp 做服务端精确裁剪
-    const cleanedBuffer = eraseResult.status === 'fulfilled' ? eraseResult.value : imageBuffer
-    const fileName = `fig-${req.params.id}-${uuidv4().slice(0, 8)}.jpg`
-    const uploadDir = path.join(process.cwd(), 'public/uploads')
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
-    const filePath = path.join(uploadDir, fileName)
-    fs.writeFileSync(filePath, cleanedBuffer)
+    // v48.3: eraseHandwriting 成功 → 用去手写后的图落盘
+    //        eraseHandwriting 失败 → 不落盘"带手写的原照", 复用 err.imageUrl 作 figureImageUrl
+    //        (前端用 imageUrl + clip-path region 渲染; imageUrl 本身就是用户原照, 静态化,
+    //         没有重复磁盘开销; region 紧贴图形本身时, 区域内无手写 = 显示干净)
+    let figureImageUrl
+    let erasedHandwriting = false
+    if (eraseResult.status === 'fulfilled') {
+      const cleanedBuffer = eraseResult.value
+      const fileName = `fig-${req.params.id}-${uuidv4().slice(0, 8)}.jpg`
+      const uploadDir = path.join(process.cwd(), 'public/uploads')
+      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
+      const filePath = path.join(uploadDir, fileName)
+      fs.writeFileSync(filePath, cleanedBuffer)
+      figureImageUrl = `/uploads/${fileName}`
+      erasedHandwriting = true
+      console.log(`[refine-figure] 去手写成功, 落盘 ${figureImageUrl}`)
+    } else if (imageUrl) {
+      // erase 失败 + 有 imageUrl: 复用, 不落盘, 避免带手写原照污染图库
+      figureImageUrl = imageUrl
+      console.log(`[refine-figure] erase 失败, 复用 imageUrl ${imageUrl} 作 figureImageUrl`)
+    } else {
+      // 老数据: 既无 erase 成功又无 imageUrl (只有 base64)
+      // 退路: 把原照落盘(虽然带手写, 但比没有强)
+      const fileName = `fig-${req.params.id}-${uuidv4().slice(0, 8)}.jpg`
+      const uploadDir = path.join(process.cwd(), 'public/uploads')
+      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
+      const filePath = path.join(uploadDir, fileName)
+      fs.writeFileSync(filePath, imageBuffer)
+      figureImageUrl = `/uploads/${fileName}`
+      console.warn(`[refine-figure] erase 失败且无 imageUrl, 落盘原照 ${figureImageUrl}(可能带手写)`)
+    }
 
-    const figureImageUrl = `/uploads/${fileName}`
-
-    // 7) 写库
+    // 7) 写库: figureImageUrl + 持久化 region (v48.3)
+    //    region 字段让 pickPrintFigure 即使在列表里拿到 figureImageUrl 也能触发 clip-path
+    //    (之前: 前端只 pickPrintFigure 看到 refined.region 才 clip; 现在库里也有 region)
     if (isMemoryDB()) {
       err.figureImageUrl = figureImageUrl
       err.figureBase64 = ''
+      err.figureRegion = region
       memoryStore.errors.set(req.params.id, err)
     } else {
       await ErrorQuestion.findByIdAndUpdate(req.params.id, {
-        $set: { figureImageUrl, figureBase64: '' },
+        $set: { figureImageUrl, figureBase64: '', figureRegion: region },
       })
     }
 
-    console.log(`[refine-figure] ${req.params.id} → ${figureImageUrl} (${Date.now() - start}ms, positions=${positions.length})`)
+    console.log(`[refine-figure] ${req.params.id} → ${figureImageUrl} (${Date.now() - start}ms, positions=${positions.length}, region=${JSON.stringify(region)})`)
     return res.json({
       refined: true,
       figureImageUrl,
-      region,  // 归一化 {x,y,w,h},前端可二次裁剪
+      region,  // 归一化 {x,y,w,h}, 前端 clip-path 用
       bboxCount: positions.length,
-      erasedHandwriting: eraseResult.status === 'fulfilled',
+      erasedHandwriting,
       elapsedMs: Date.now() - start,
     })
   } catch (err) {

@@ -147,6 +147,8 @@ export interface ErrorItem {
   figureBase64?: string
   // v44: 图片静态化 —— 插图落盘 /uploads 后的 URL(可缓存); 迁移后 figureBase64 清空
   figureImageUrl?: string
+  // v48.3: refine-figure 持久化的 region, 让打印页 export 走 clip-path, 不必每次 refine
+  figureRegion?: { x: number; y: number; w: number; h: number }
   createdAt: string
   updatedAt: string
 }
@@ -272,9 +274,9 @@ const api = {
     }>(`/errors/${id}/refine-figure`, { method: 'POST' }),
 
   // v48.2: 按需取单条示意图(列表接口剥离了 figureBase64, 打印页靠本方法懒加载还原)
-  // 出参: { figureImageUrl, figureBase64 }(figureBase64 可能是 30KB+ 的 base64)
+  // 出参: { figureImageUrl, figureBase64, figureRegion }(figureBase64 可能是 30KB+ 的 base64)
   getErrorFigure: (id: string) =>
-    request<{ figureImageUrl: string; figureBase64: string }>(`/errors/${id}/figure`),
+    request<{ figureImageUrl: string; figureBase64: string; figureRegion?: { x: number; y: number; w: number; h: number } | null }>(`/errors/${id}/figure`),
 
   // ─── AI 服务 ────────────────────────────────────────────────────────────────
   analyzeError: (data: { title: string; knowledgePoint: string; subject: string; textContent?: string; sourceText?: string; childId?: string; figureBase64?: string }) =>

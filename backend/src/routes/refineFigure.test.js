@@ -14,11 +14,16 @@ vi.mock('../services/textin.js', () => ({
   eraseHandwriting: vi.fn(async (buf) => buf),
   recognizeText: vi.fn(async () => ({
     lines: [
-      { text: '题干', position: [0, 0, 0.4, 0, 0.4, 0.3, 0, 0.3] },
-      { text: '选项A', position: [0, 0.3, 0.4, 0.3, 0.4, 0.4, 0, 0.4] },
-      { text: '选项B', position: [0, 0.4, 0.4, 0.4, 0.4, 0.5, 0, 0.5] },
-      { text: '选项C', position: [0, 0.5, 0.4, 0.5, 0.4, 0.6, 0, 0.6] },
-      { text: '选项D', position: [0, 0.6, 0.4, 0.6, 0.4, 0.7, 0, 0.7] },
+      // v48.3 mock: 文本覆盖上中下三块, 让启发式找到右半 0.4~1.0 的「图区」(与真实拍题 strip 一致)
+      { text: '题干1', position: [0, 0.02, 0.4, 0.02, 0.4, 0.10, 0, 0.10] },
+      { text: '题干2', position: [0, 0.12, 0.4, 0.12, 0.4, 0.20, 0, 0.20] },
+      { text: '题干3', position: [0, 0.22, 0.4, 0.22, 0.4, 0.30, 0, 0.30] },
+      { text: '选项A', position: [0, 0.34, 0.4, 0.34, 0.4, 0.42, 0, 0.42] },
+      { text: '选项B', position: [0, 0.44, 0.4, 0.44, 0.4, 0.52, 0, 0.52] },
+      { text: '选项C', position: [0, 0.54, 0.4, 0.54, 0.4, 0.62, 0, 0.62] },
+      { text: '选项D', position: [0, 0.64, 0.4, 0.64, 0.4, 0.72, 0, 0.72] },
+      // 底部一行(把 L-shape 的"底条"切断 — 直接接到选项 D 下方不留缝隙)
+      { text: '尾注', position: [0.0, 0.72, 1.0, 0.72, 1.0, 0.99, 0.0, 0.99] },
     ],
   })),
   recognizeFormula: vi.fn(async () => ({ formulas: [], raw: {} })),
@@ -87,7 +92,7 @@ describe('POST /:id/refine-figure (内存模式 mock textin)', () => {
     expect(r.body.refined).toBe(true)
     expect(r.body.figureImageUrl).toMatch(/^\/uploads\/fig-err-1-/)
     expect(r.body.region).toBeTruthy()
-    expect(r.body.bboxCount).toBe(5)
+    expect(r.body.bboxCount).toBe(8)
 
     const stored = memoryStore.errors.get('err-1')
     expect(stored.figureImageUrl).toBe(r.body.figureImageUrl)

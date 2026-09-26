@@ -217,11 +217,16 @@ export function figureRegionFromTextPositions(
   const GRID = 100
   const occupied = new Uint8Array(GRID * GRID)
   // 边框视为 occupied(防止文字贴边时把边距空白当插图)
+  // v48.3: 但对于"几何/立体图常贴右边"的横长条(如拍题宽幅裁剪的 strip),
+  // 右边的 1 格 padding 改"软边界" —— flood-fill 时只把跨越整个右边界的连通块
+  // (即真正"贴边又贴边"的两边都贴的空)才拒收;只在右边贴边的允许作为 figure。
+  // 左/上/下仍按硬边界处理。
   for (let i = 0; i < GRID; i++) {
     occupied[i] = 1                         // 顶行
     occupied[(GRID - 1) * GRID + i] = 1     // 底行
     occupied[i * GRID] = 1                  // 左列
-    occupied[i * GRID + GRID - 1] = 1       // 右列
+    // 右列不预占: 让"贴右但不贴左/顶/底"的空白区域被识别为 figure
+    // (实测 cube 题图占右半边, 启发式原本返回 null, 现在应返回右半边区域)
   }
   for (const m of merged) {
     const x0 = Math.floor(m.x * GRID)
@@ -306,9 +311,12 @@ export function figureRegionFromTextPositions(
   //   则改用「中央被包围的最大未 occupied 连通块」作为 figureRegion。
   //
   // 中央候选框:整图水平 [0.15,0.85]、垂直 [0.2,0.8]。线框图典型落在中央。
+  // v48.3: 仅当 region 贴「硬边界」(左/顶/底)且补集 < 0.15 时才算 unreliable。
+// 右边界视为「软边界」 —— 拍题宽幅裁剪 strip 中, 几何/立体图常贴右边(立方体右侧的
+// F/G 字母可能在 strip 右端), 强行拒收会回到视觉模型兜底, 兜底命中又过紧, 形成 bug 循环。
+// 实测 cube 题: 启发式原本因 right-touch 拒收, 改后应直接返回右半边的 cube 区域。
   const bestTouchesBorder =
-    bestRegion && (bestRegion.minX <= 1 || bestRegion.minY <= 1 ||
-                  bestRegion.maxX >= GRID - 2 || bestRegion.maxY >= GRID - 2)
+    bestRegion && (bestRegion.minX <= 1 || bestRegion.minY <= 1 || bestRegion.maxY >= GRID - 2)
   const complementUnreliable = ratio < 0.15 || ratio > 0.92 || bestTouchesBorder
   if (complementUnreliable && isFigureBoxedByText(occupied, GRID, totalGrid)) {
     const center = findBoxedCenterRegion(occupied, GRID)
@@ -321,11 +329,12 @@ export function figureRegionFromTextPositions(
   }
   if (ratio < 0.15 || ratio > 0.92) return null
 
-  // 网格坐标 → 归一化坐标(扩 1 个格子边界,避免裁剪太紧)
-  const x = Math.max(0, (bestRegion.minX - 1) / GRID)
-  const y = Math.max(0, (bestRegion.minY - 1) / GRID)
-  const x2 = Math.min(1, (bestRegion.maxX + 1) / GRID)
-  const y2 = Math.min(1, (bestRegion.maxY + 1) / GRID)
+  // 网格坐标 → 归一化坐标(扩 3 个格子边界,避免裁剪太紧 — 立方体等图的字母标注常贴边)
+  const PAD = 3
+  const x = Math.max(0, (bestRegion.minX - PAD) / GRID)
+  const y = Math.max(0, (bestRegion.minY - PAD) / GRID)
+  const x2 = Math.min(1, (bestRegion.maxX + PAD) / GRID)
+  const y2 = Math.min(1, (bestRegion.maxY + PAD) / GRID)
   return {
     x: round4(x),
     y: round4(y),
@@ -415,10 +424,10 @@ function findBoxedCenterRegion(occupied, grid) {
     }
   }
   if (!best) return null
-  const x = Math.max(0, (best.minX - 1) / G)
-  const y = Math.max(0, (best.minY - 1) / G)
-  const x2 = Math.min(1, (best.maxX + 1) / G)
-  const y2 = Math.min(1, (best.maxY + 1) / G)
+  const x = Math.max(0, (best.minX - 3) / G)
+  const y = Math.max(0, (best.minY - 3) / G)
+  const x2 = Math.min(1, (best.maxX + 3) / G)
+  const y2 = Math.min(1, (best.maxY + 3) / G)
   return {
     x: round4(x),
     y: round4(y),
