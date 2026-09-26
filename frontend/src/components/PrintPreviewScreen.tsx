@@ -13,7 +13,7 @@ import LatexPreview from '@/components/LatexPreview'
 import type { Subject } from '@/stores/api'
 import type { SimilarQuestion } from '@/stores/api'
 import { sliceSimilarQuestions, DEFAULT_SIMILAR_COUNT } from '@/utils/sliceSimilarQuestions'
-import { resolveImageUrl } from '@/stores/api'
+import api, { resolveImageUrl } from '@/stores/api'
 import { Capacitor } from '@capacitor/core'
 import { Printer } from '@dimer47/capacitor-plugin-printer'
 
@@ -32,6 +32,14 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
   const [showAnswer, setShowAnswer] = useState(false)
   // v42: 同类练习题数量(每道题统一控制; 用户自主输入, 默认 4; 0=不打印)
   const [similarCount, setSimilarCount] = useState<number>(DEFAULT_SIMILAR_COUNT)
+  // v48: 各题 refine 后状态 { [errId]: { figureImageUrl, region, loading, refined } }
+  const [refineMap, setRefineMap] = useState<Record<string, {
+    figureImageUrl?: string
+    region?: { x: number; y: number; w: number; h: number }
+    loading: boolean
+    refined: boolean
+    reason?: string
+  }>>({})
   // 输入框用字符串暂存, 避免 "01" 这类前导零被数字态吞掉; 提交时解析
   const [similarCountInput, setSimilarCountInput] = useState<string>(String(DEFAULT_SIMILAR_COUNT))
   // v30: 随机练习模式
@@ -60,6 +68,30 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
+  }
+
+  // v48: refine 示意图(去手写 + 扩边完整裁剪)
+  // 调后端 /api/errors/:id/refine-figure,拿到 figureImageUrl(去手写后整张图)
+  // + region(归一化示意图坐标),写到本地 state,渲染时用 CSS clip-path 抠 region
+  const handleRefine = async (id: string) => {
+    if (refineMap[id]?.loading) return
+    setRefineMap((m) => ({ ...m, [id]: { loading: true, refined: false } }))
+    try {
+      const r = await api.refineFigure(id)
+      setRefineMap((m) => ({
+        ...m,
+        [id]: {
+          loading: false,
+          refined: r.refined,
+          reason: r.reason,
+          figureImageUrl: r.figureImageUrl,
+          region: r.region,
+        },
+      }))
+    } catch (e: any) {
+      console.warn('[PrintPreview] refine 失败:', e)
+      setRefineMap((m) => ({ ...m, [id]: { loading: false, refined: false, reason: e.message || 'fail' } }))
+    }
   }
 
   const [printing, setPrinting] = useState(false)
@@ -327,33 +359,88 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
                       <div
                         className={`px-2 py-2 print:p-3 ${printLayout === '2列' ? 'min-h-[120px] max-h-[200px] print:max-h-none' : 'min-h-[160px] max-h-[280px] print:max-h-none'}`}
                       >
-                        {/* v47.2: 题目中的「示意图」(原书印刷的几何图/物理装置/化学结构等),
-                           不是整张题目照片!整张题目照片是孩子拍的歪的整页,
-                           打印场景孩子不需要看自己拍的歪照,需要看原书印刷图才能看懂题。
-                           优先 figureImageUrl(v44 静态化);缺失回退 figureBase64(老数据)。
-                           都缺 → 显示原图 imageUrl/imageBase64(整张题目,含手写批注)。
-                           高度按 print 排版给:1 列 240px,2 列 160px(打印倍增)。 */}
-                        {(err.figureImageUrl || err.figureBase64) ? (
-                          <img
-                            src={resolveImageUrl(err.figureImageUrl || err.figureBase64)}
-                            alt={`${err.title} 示意图`}
-                            className={`w-full object-contain rounded-md bg-white border border-slate-200 mb-2 print:mb-2 ${
-                              printLayout === '2列'
-                                ? 'max-h-[140px] print:max-h-[200px]'
-                                : 'max-h-[200px] print:max-h-[280px]'
-                            }`}
-                          />
-                        ) : (err.imageUrl || err.imageBase64) ? (
-                          <img
-                            src={resolveImageUrl(err.imageUrl || err.imageBase64)}
-                            alt={err.title}
-                            className={`w-full object-contain rounded-md bg-slate-50 border border-slate-100 mb-2 print:mb-2 ${
-                              printLayout === '2列'
-                                ? 'max-h-[100px] print:max-h-[160px]'
-                                : 'max-h-[160px] print:max-h-[240px]'
-                            }`}
-                          />
-                        ) : null}
+                        {/* v47.2 + v48: 优先显示示意图。
+                           - v47.2: figureImageUrl/figureBase64(原书示意图)
+                           - v48: refine 后返回 figureImageUrl(去手写图)+ region(归一化坐标),
+                             用 CSS clip-path inset 按 region 抠示意图部分。
+                           - 兜底: imageUrl/imageBase64(整张题目照)
+                           - 用户可点「图不全?点此优化」调后端 refine 重算 */}
+                        {(() => {
+                          const refined = refineMap[err.id]
+                          // v48: 本地 refine 成功 + 有 region → 用去手写图 + clip-path
+                          if (refined?.refined && refined.figureImageUrl && refined.region) {
+                            const r = refined.region
+                            // region {x,y,w,h} 归一化 → clip-path inset(top right bottom left) 用百分比
+                            const top = (r.y * 100).toFixed(2)
+                            const left = (r.x * 100).toFixed(2)
+                            const bottom = ((1 - r.y - r.h) * 100).toFixed(2)
+                            const right = ((1 - r.x - r.w) * 100).toFixed(2)
+                            return (
+                              <div className="relative">
+                                <img
+                                  src={resolveImageUrl(refined.figureImageUrl)}
+                                  alt={`${err.title} 示意图(已优化)`}
+                                  className={`w-full object-cover rounded-md bg-white border border-slate-200 mb-2 print:mb-2 ${
+                                    printLayout === '2列'
+                                      ? 'max-h-[140px] print:max-h-[200px]'
+                                      : 'max-h-[200px] print:max-h-[280px]'
+                                  }`}
+                                  style={{ clipPath: `inset(${top}% ${right}% ${bottom}% ${left}%)` }}
+                                />
+                                <span className="absolute top-1 right-1 px-1.5 py-0.5 text-[8px] font-bold rounded bg-green-100 text-green-700">✓ 已去手写</span>
+                              </div>
+                            )
+                          }
+                          // 兜底 1: figureImageUrl / figureBase64(原书示意图,可能不全)
+                          if (err.figureImageUrl || err.figureBase64) {
+                            return (
+                              <div className="relative">
+                                <img
+                                  src={resolveImageUrl(err.figureImageUrl || err.figureBase64)}
+                                  alt={`${err.title} 示意图`}
+                                  className={`w-full object-contain rounded-md bg-white border border-slate-200 mb-2 print:mb-2 ${
+                                    printLayout === '2列'
+                                      ? 'max-h-[140px] print:max-h-[200px]'
+                                      : 'max-h-[200px] print:max-h-[280px]'
+                                  }`}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRefine(err.id)}
+                                  disabled={refined?.loading}
+                                  className="absolute top-1 right-1 px-1.5 py-0.5 text-[8px] font-bold rounded bg-amber-100 text-amber-700 hover:bg-amber-200 print:hidden disabled:opacity-50"
+                                >
+                                  {refined?.loading ? '优化中…' : '图不全?点此优化'}
+                                </button>
+                              </div>
+                            )
+                          }
+                          // 兜底 2: imageUrl / imageBase64(整张题目照)
+                          if (err.imageUrl || err.imageBase64) {
+                            return (
+                              <div className="relative">
+                                <img
+                                  src={resolveImageUrl(err.imageUrl || err.imageBase64)}
+                                  alt={err.title}
+                                  className={`w-full object-contain rounded-md bg-slate-50 border border-slate-100 mb-2 print:mb-2 ${
+                                    printLayout === '2列'
+                                      ? 'max-h-[100px] print:max-h-[160px]'
+                                      : 'max-h-[160px] print:max-h-[240px]'
+                                  }`}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRefine(err.id)}
+                                  disabled={refined?.loading}
+                                  className="absolute top-1 right-1 px-1.5 py-0.5 text-[8px] font-bold rounded bg-amber-100 text-amber-700 hover:bg-amber-200 print:hidden disabled:opacity-50"
+                                >
+                                  {refined?.loading ? '优化中…' : '提取示意图'}
+                                </button>
+                              </div>
+                            )
+                          }
+                          return null
+                        })()}
                         {err.textContent ? (
                           <LatexPreview
                             text={err.textContent}

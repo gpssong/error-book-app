@@ -11,6 +11,11 @@ import { isMemoryDB } from '../schemas/db.js'
 import memoryStore from '../schemas/memory.js'
 import { createMemoryError } from '../schemas/errorQuestion.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { isTextInConfigured, eraseHandwriting, recognizeText } from '../services/textin.js'
+import { figureRegionFromTextPositions } from '../pipeline/textExtract.js'
+import { v4 as uuidv4 } from 'uuid'
+import path from 'path'
+import fs from 'fs'
 
 const router = Router()
 router.use(authMiddleware)
@@ -245,6 +250,116 @@ router.patch('/:id/ai-analysis', async (req, res) => {
     res.json(err)
   } catch (err) {
     res.status(500).json({ error: err.message })
+  }
+})
+
+// ─── v48 重新计算示意图(去手写 + 扩边完整裁剪)─────────────────────────
+// 背景:v47 OCR fallback 只能求 regionSelect 内图的「最大空白」,但示意图常常
+// 被 regionSelect 部分裁掉导致只显示一角。用户在打印预览页发现图不全,
+// 点此端点:取整张原照(imageBase64)→ TextIn eraseHandwriting 去手写
+// → recognizeText 拿真实 bbox → figureRegionFromTextPositions 求最大空白
+// → 扩边 10% → sharp/jimp 裁剪 → 落盘 /uploads/fig-{id}.jpg → 写库 figureImageUrl
+//
+// 入参: 无 (从 URL :id 取错题)
+// 出参: { refined: true, figureImageUrl: '/uploads/fig-xxx.jpg' }
+//       或 { refined: false, reason: 'no-image'|'no-textin'|'no-figure' }
+router.post('/:id/refine-figure', async (req, res) => {
+  const start = Date.now()
+  try {
+    // 1) 加载错题(内存/Mongo 都支持)
+    let err, imageBase64
+    if (isMemoryDB()) {
+      err = getErrorOf(req.userId, req.params.id)
+      if (!err) return res.status(404).json({ error: '错题不存在' })
+      imageBase64 = err.imageBase64
+    } else {
+      err = await ErrorQuestion.findById(req.params.id)
+      if (!err) return res.status(404).json({ error: '错题不存在' })
+      const child = await Child.findOne({ _id: err.childId, ownerId: req.userId })
+      if (!child) return res.status(403).json({ error: '无权访问' })
+      imageBase64 = err.imageBase64
+    }
+    if (!imageBase64) {
+      return res.json({ refined: false, reason: 'no-image' })
+    }
+
+    // 2) TextIn 配置检查
+    if (!isTextInConfigured()) {
+      return res.json({ refined: false, reason: 'no-textin' })
+    }
+
+    // 3) 取干净 buffer(去掉 data: 前缀)
+    const cleanBase64 = String(imageBase64).replace(/^data:image\/\w+;base64,/, '')
+    const imageBuffer = Buffer.from(cleanBase64, 'base64')
+    if (imageBuffer.length < 1000) {
+      return res.json({ refined: false, reason: 'image-too-small' })
+    }
+
+    // 4) 去手写 + 文字识别(并行)
+    const [eraseResult, textResult] = await Promise.allSettled([
+      eraseHandwriting(imageBuffer, { crop: 1, doc_direction: 4 }),
+      recognizeText(imageBuffer, { recognize_graphics: 1 }),
+    ])
+    if (eraseResult.status === 'rejected') {
+      console.warn('[refine-figure] eraseHandwriting 失败,用原图继续:', eraseResult.reason?.message)
+    }
+    if (textResult.status === 'rejected') {
+      return res.json({ refined: false, reason: 'recognize-failed', detail: textResult.reason?.message })
+    }
+
+    // 5) 用识别 bbox 求示意图区域(优先去手写后的图,缺则用原图 bbox)
+    const textLines = textResult.value.lines
+    const positions = textLines.map((l) => l.position).filter((p) => Array.isArray(p) && p.length === 8)
+    if (positions.length < 2) {
+      return res.json({ refined: false, reason: 'no-text-bbox' })
+    }
+    const region = figureRegionFromTextPositions(positions, 1, 1)
+    if (!region) {
+      return res.json({ refined: false, reason: 'no-figure-region' })
+    }
+
+    // 6) 在去手写后的图上裁剪 region + 扩边 10%(让图更全)
+    //    v48 设计决策(不引入 sharp/jimp):
+    //    - sharp 是 libvips 绑定,镜像 +40MB,且 Dockerfile 不在 repo(无法本地构建)
+    //    - 用纯 JS 抠像素太慢,且 jimp 也引几十 MB
+    //    - 折中:后端落盘「去手写后的整张图」(figureImageUrl 指这图)
+    //    - 同时返回 region 坐标(归一化 {x,y,w,h})
+    //    - 前端拿到后用 CSS clip-path: inset(top right bottom left)
+    //      在 <img> 上按 region 渲染,只显示示意图部分(去手写背景+白底)
+    //    - 打印时 printer 截图截的是 <img> 实际可见区域 → 包含完整示意图
+    //    后续(v49+):若 Dockerfile 移进 repo,可加 sharp 做服务端精确裁剪
+    const cleanedBuffer = eraseResult.status === 'fulfilled' ? eraseResult.value : imageBuffer
+    const fileName = `fig-${req.params.id}-${uuidv4().slice(0, 8)}.jpg`
+    const uploadDir = path.join(process.cwd(), 'public/uploads')
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
+    const filePath = path.join(uploadDir, fileName)
+    fs.writeFileSync(filePath, cleanedBuffer)
+
+    const figureImageUrl = `/uploads/${fileName}`
+
+    // 7) 写库
+    if (isMemoryDB()) {
+      err.figureImageUrl = figureImageUrl
+      err.figureBase64 = ''
+      memoryStore.errors.set(req.params.id, err)
+    } else {
+      await ErrorQuestion.findByIdAndUpdate(req.params.id, {
+        $set: { figureImageUrl, figureBase64: '' },
+      })
+    }
+
+    console.log(`[refine-figure] ${req.params.id} → ${figureImageUrl} (${Date.now() - start}ms, positions=${positions.length})`)
+    return res.json({
+      refined: true,
+      figureImageUrl,
+      region,  // 归一化 {x,y,w,h},前端可二次裁剪
+      bboxCount: positions.length,
+      erasedHandwriting: eraseResult.status === 'fulfilled',
+      elapsedMs: Date.now() - start,
+    })
+  } catch (err) {
+    console.error('[refine-figure] 异常:', err)
+    res.status(500).json({ error: err.message || 'refine 失败' })
   }
 })
 

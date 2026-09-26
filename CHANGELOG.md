@@ -1,5 +1,55 @@
 # Changelog
 
+## v48 (2026-09-26) - 打印预览「图不全 + 去手写」:refine-figure 端点 + CSS clip-path
+
+### 背景
+
+v47.2 让打印预览显示示意图(`figureImageUrl`),但用户截图(2026-09-26)反馈:
+1. **图不全**:只显示立方体一角(ABCD 的 A 和 D 角),看不到 EFGH
+2. **需要去底去手写**:示意图底下有阴影/手写笔迹
+
+**根因**:`figureImageUrl` 是用户在 **regionSelect 时手动框选**的,**只框出题目区域**(包括文字 + 部分示意图 + 周边白边);示意图常常被 regionSelect 部分裁出(v47 OCR fallback 只能在已裁图内求「最大空白」,无法扩边)。同时,**v44 把 `imageBase64` 落盘为 `imageUrl` 静态文件时,孩子的手写批注已 bake-in 到静态图里**(原图本身就是手写过的图)。
+
+### 改动(4 文件,~280 行)
+
+| 类别 | 文件 | 内容 |
+|---|---|---|
+| **后端 P0 新端点** | `backend/src/routes/errorQuestion.js` | 新增 `POST /api/errors/:id/refine-figure`:取 imageBase64 → TextIn `eraseHandwriting` 去手写 → `recognizeText` 拿真实 bbox → `figureRegionFromTextPositions` 求示意图 region → 落盘 `/uploads/fig-{id}-{uuid8}.jpg` → 写 `figureImageUrl` + 清空 `figureBase64`。返回 `{ refined, figureImageUrl, region, bboxCount, erasedHandwriting, elapsedMs }` 或 `{ refined:false, reason:'no-image'\|'no-textin'\|'image-too-small'\|'recognize-failed'\|'no-text-bbox'\|'no-figure-region' }` |
+| **后端 P1 测试** | `backend/src/routes/refineFigure.test.js`(新增 4 条) | mock TextIn;覆盖:不存在 id → 404;有图 + mock 成功 → refined=true + 写库;无 imageBase64 → reason=no-image;图太小 → reason=image-too-small |
+| **前端 P0 refine 按钮 + clip-path** | `frontend/src/components/PrintPreviewScreen.tsx` | state 加 `refineMap[errId]`;题图区域上方加按钮「图不全?点此优化」 / 「提取示意图」(`absolute top-1 right-1` + `print:hidden`);调 `api.refineFigure(id)` → 拿新 figureImageUrl + region → 用 CSS `clip-path: inset(top% right% bottom% left%)` 抠 region 部分;成功后在图角显示「✓ 已去手写」徽章 |
+| **前端 P1 api 客户端** | `frontend/src/stores/api.ts` | 新增 `refineFigure(id)` 返回 `{ refined, reason?, figureImageUrl?, region?, bboxCount? }` |
+
+### 设计决策
+
+- **不引入 sharp/jimp**:Dockerfile 不在 repo,引入 sharp 会让镜像 +40MB;前端用 **CSS `clip-path: inset()`** 在 `<img>` 上按 region 抠示意图,**不引依赖,O(1) 渲染**
+- **后端落盘「去手写后整张图」**:不是「已裁好的图」—— 整张图包含 background 信息,前端按 region clip 即可;后续若 Dockerfile 进 repo + 加 sharp,可在后端精确裁剪
+- **clip-path 不用 SVG mask / 二次 canvas crop**:clip-path 是纯 CSS,打印 `Printer.printWebView()` 时 WebView 截图会按实际像素截 `<img>` 可见区域,包含 region 部分
+- **按钮区分「图不全」(figure 非空)/「提取示意图」(整张题照兜底)**:提示语义更准
+- **不写库刷新整张列表**:refine 只更新单条 err 的 figureImageUrl,AppContext 不会自动刷新;若用户退打印页再进,需 `refreshErrors()`;当前先打印预览本地 state 用即可,刷新逻辑 v49+ 再做
+
+### 验证
+
+- 后端 `pnpm test` **62/62 通过**(原 58 + 新 4 refine)
+- 后端 `pnpm lint` 0 error / 11 warnings(存量 unused var)
+- 前端 `pnpm typecheck` ✓ / `pnpm build` ✓(chunk `index-Co8u3bH-.js` 613568 bytes)
+- 飞牛 dist 部署:`curl http://192.168.0.32:4040/assets/index-Co8u3bH-.js` → HTTP 200 / 613568 bytes
+- 后端 rebuild + 容器重启:`curl /api/health` → `{"status":"ok","db":"mongodb"}`;refine 端点 401(需 token,符合预期)
+- APK `error-book-v48-refine-figure.apk` 5.8MB → 飞牛同步盘 + 本地 `apk/`
+
+### 已知限制
+
+- **打印预览本地 state**:refine 结果只存 `PrintPreviewScreen` 本地 `refineMap`,刷新打印页 / 退再进会丢 —— 用户退打印页后 v47.2 渲染仍按库里的旧 figureImageUrl(可能图不全)
+- **clip-path 在 iOS Safari / 老 WebView 可能不生效**:目前仅 Android Capacitor 8 WebView 测试通过;iOS 用户升级需后续验证
+- **去手写依赖 TextIn `eraseHandwriting`**:TextIn 必须配置凭证 + 余额;无凭证时 refine 端点返回 `reason: 'no-textin'`,按钮变 toast 提示
+
+### 后续(v49+)
+
+- 引入 sharp 做服务端精确裁剪(避免 clip-path 边界像素锯齿)
+- AppContext `refreshErrors` 自动刷新单条 err 的 figureImageUrl(让 refine 结果跨页面持久)
+- 详情页也加 refine 按钮(详情页主图显示整张照,refine 后 figureImageUrl 直接显示完整示意图)
+
+---
+
 ## v47.2 (2026-09-26) - 打印预览页显示「示意图」而非「整张题目照片」
 
 ### 背景

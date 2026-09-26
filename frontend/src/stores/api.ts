@@ -260,6 +260,17 @@ const api = {
   saveAiAnalysis: (id: string, data: { mistakeReason: string; knowledgeExplained: string; stepByStepGuide: string; answer?: string; similarQuestions?: SimilarQuestion[] }) =>
     request<ErrorItem>(`/errors/${id}/ai-analysis`, { method: 'PATCH', body: JSON.stringify(data) }),
 
+  // v48: 重新计算题目示意图(去手写 + 扩边完整裁剪)
+  // 入参: 错题 id; 出参: { refined, figureImageUrl, region, bboxCount, ... }
+  refineFigure: (id: string) =>
+    request<{
+      refined: boolean
+      reason?: string
+      figureImageUrl?: string
+      region?: { x: number; y: number; w: number; h: number }
+      bboxCount?: number
+    }>(`/errors/${id}/refine-figure`, { method: 'POST' }),
+
   // ─── AI 服务 ────────────────────────────────────────────────────────────────
   analyzeError: (data: { title: string; knowledgePoint: string; subject: string; textContent?: string; sourceText?: string; childId?: string; figureBase64?: string }) =>
     request<AIAnalysisResult>('/ai/analyze', { method: 'POST', body: JSON.stringify(data) }),
