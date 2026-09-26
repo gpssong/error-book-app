@@ -1,5 +1,53 @@
 # Changelog
 
+## v46 (2026-09-26) - OCR 视觉塌缩多层防护(P0 治本 + P1/P2 兜底)
+
+### 背景
+
+拍「代数最小值」等高频套路题时,视觉模型(Agnes-2.5-pro-alpha)把
+`[B] √(x²+4)+4/√(x²+4)` 脑补成 `a+1/a+4`,把 `[D] m²+2/√(n(m²−n))` 脑补成 `4+1/4+4`,
+`latexNormalize` 还帮忙「包装」成看起来对的 LaTeX, **双重掩盖识别崩坏**.
+
+**根因(trace 出的 3 个)**:
+1. TextIn `/v2/recognize/formula` 端点已实现但未调用,仅用通用 OCR + 视觉
+   → 视觉模型从「白板读图」,容易套训练数据里的常见模式
+2. `latexNormalize` 贪婪匹配 `\sqrt` 后跟多字符 radicand,把 `\sqrt{x^2+4}`
+   毁成 `\sqrt{x}^{2}+4}` 渲染报错/错位
+3. 前端 TextIn key 被后端丢弃,`config.html` 配置死开关
+
+### 改动(6 项)
+
+| 类别 | 内容 |
+|---|---|
+| **P0 治本:权威公式锚点** | `routes/ocr.js` 并行调 `recognizeFormula`(/v2/recognize/formula), 把权威 LaTeX 注入 `visionFallback` 的 userPrompt;视觉模型从「白板读图」变「按锚点补全」,杜绝脑补 |
+| **P1 normalizer 不再毁 radicand** | `latexNormalize.js` Step 2 只对单字符 radicand 补 `{}`,多 token radicand(含运算符/花括号)不碰;Step 1 接受 `√` 后接 `(` 触发 `\sqrt(` |
+| **P2 公式 sanity 拦幻觉** | `pipeline/textExtract.js` 新增 `formulaSanityCheck(textContent)` 纯函数,4 种幻觉检测:选项<4 / symbols<3(去 A-D 前缀) / 形状重复(去变量后 hash ≤2) / 无 LaTeX 结构;视觉主路径返回前 + 低质量重读触发器都接入,**不通过则降级到 `semanticParseText` 文本路径形成对照** |
+| **P4 双 provider(线上已就绪)** | 飞牛 `.env` 已配 `MINIMAX_API_KEY`,`semanticParseText` 优先走 Anthropic Messages 协议调 MiniMax-M3;但 `visionFallback` 之前误用 OpenAI `/chat/completions` 协议调 MiniMax → 404。**hotfix**: `callAnthropicAPI` 加 `imageBase64` 支持,`visionFallback` MiniMax 分支切到 `callAnthropicAPI`,按 Anthropic Messages image block 发多模态 |
+| **P5 前端 TextIn key 透传** | `routes/ocr.js` 读 `X-TextIn-App-Id/Secret-Code` 头透传给 `recognizeText/recognizeFormula/eraseHandwriting/isTextInConfigured`,`config.html` 配置的 key 真正生效 |
+| **P6 前端「换通道重试」按钮** | 后端 `POST /api/ocr` 接受 `forceTextPath=true` 跳过 `visionFallback`;前端 `CameraScreen` batchResult 页加「换通道重试」按钮,缓存最近 croppedUrl,重试结果拼到明细作为对照 |
+
+### 设计决策
+
+- **「治本 + 多层兜底」分层**: P0 治本(权威锚点) + P1 normalizer 不再放大错误 + P2 sanity 拦幻觉 + P6 用户逃生口。任何一层失效,下一层接住。
+- **视觉模型塌缩的根因是「白板读图」,不是「模型不够强」**:给视觉模型看到原图 + 权威公式字符串,问题消失。这比换模型/换 prompt 都彻底。
+- **`formulaSanityCheck` 是「拦幻觉」而非「禁止幻觉」**:真出幻觉,LLM 仍可能产出;sanity 在 LLM 返回值上做统计性检查(形状重复 / 符号贫乏 / 无 LaTeX 结构),不通过则降级文本路径,文本路径通过就用文本。
+- **P6 是「逃生口」不是「主路径」**:默认走视觉兜底,用户怀疑结果时点按钮换文本,**主动选择**而非强制路径。
+- **hotfix-1: MiniMax 协议**: `callVisionAPI`(OpenAI `/chat/completions`)MiniMax 不支持,**必须**用 `callAnthropicAPI`(Anthropic Messages `/v1/messages`)+ image block。Agnes 视觉账户已欠费到 $0.0002,所以 MiniMax 是实际工作 provider。
+
+### 验证
+
+- 后端 `pnpm test` **50/50 通过**(原42 + 1 P1 修复回归 + 7 P2 sanity)
+- 后端 `pnpm lint` **0 error / 9 warning**(均存量 unused var)
+- 前端 `pnpm typecheck` ✓ / `pnpm build` ✓(chunk `index-BhdpWipg.js`)
+- 飞牛线上部署:`/api/ocr/status` 返回 `{"textin":"configured","visionModel":"agnes-2.5-pro-alpha","minimax":"configured"}`
+- 健康检查: `curl -6 http://error.93gushi.com:4040/api/health` → `{"status":"ok","db":"mongodb"}`
+- 真机验证(MiniMax vision protocol): `curl https://api.minimaxi.com/anthropic/v1/messages` + image block → 200 OK ✓
+- APK `error-book-v46-ocr-fix.apk`(5.87MB, 含 v46 chunk) → 飞牛同步盘 + 本地 apk/
+
+### 待办(用户充值即可)
+
+- Agnes 视觉账户欠费 ($0.0002),目前实际靠 MiniMax-M3 跑视觉。建议充值到 $5+ 以便双 provider 都可用(Agnes 文本 / MiniMax 视觉,互为备份)。
+
 ## v45 (2026-09-26) - 错题列表分页 + 无限滚动(千条级仍流畅)
 
 ### 背景
