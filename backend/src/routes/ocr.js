@@ -19,7 +19,7 @@ dotenv.config()
 import { isTextInConfigured, eraseHandwriting, recognizeText, recognizeFormula } from '../services/textin.js'
 import { semanticParseText, visionFallback, detectSubjectByLLM } from '../services/minimax.js'
 import { normalizeLatex } from '../utils/latexNormalize.js'
-import { extractTitleAndKP, trimToFirstQuestion, formulaSanityCheck } from '../pipeline/textExtract.js'
+import { extractTitleAndKP, trimToFirstQuestion, formulaSanityCheck, figureRegionFromTextPositions } from '../pipeline/textExtract.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { checkDailyLimit } from '../middleware/paywall.js'
 
@@ -113,7 +113,25 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
       console.warn('[OCR] 专业公式识别失败,回退到通用 OCR 公式行:', formulaResult.reason?.message)
     }
 
-    console.log(`[OCR] 文字行数: ${textOnlyLines.length}, 公式行: ${formulaLines.length}, 权威LaTeX: ${formulaLatex.length}`)
+    // v47+: 收集所有 lines[].position,用于后端 figureRegion fallback
+    // (TextIn 文字 + 公式端点都返回 4 顶点归一化坐标)
+    const textPositions = textLines.map((l) => l.position).filter((p) => Array.isArray(p) && p.length === 8)
+    const formulaPositions =
+      formulaResult.status === 'fulfilled'
+        ? formulaResult.value.formulas.map((f) => f.position).filter((p) => Array.isArray(p) && p.length === 8)
+        : []
+    const allPositions = [...textPositions, ...formulaPositions]
+
+    console.log(`[OCR] 文字行数: ${textOnlyLines.length}, 公式行: ${formulaLines.length}, 权威LaTeX: ${formulaLatex.length}, 文字bbox: ${textPositions.length}, 公式bbox: ${formulaPositions.length}`)
+
+    // v47+: 当 AI 视觉模型未给出 figureRegion 时,后端兜底用文字/公式 bbox 求补集
+    // (几何立体题 figureRegion 命中率仅 1.4%,但 bbox 是真实坐标,补集 = 示意图)
+    function fallbackFigureRegion() {
+      if (allPositions.length < 2) return ''
+      const fb = figureRegionFromTextPositions(allPositions, 1, 1)
+      if (!fb) return ''
+      return JSON.stringify(fb)
+    }
 
     // ─── P6(2026-09-26): 「重试识别」按钮强制走纯文本路径 ─────────
     // 视觉模型在代数最小值等高频套路题上会脑补常见模式(a+1/a+C),
@@ -157,7 +175,7 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
                   knowledgePoint: textParsed.knowledgePoint || '未知',
                   textContent: textParsed.textContent,
                   sourceText: textParsed.sourceText || '',
-                  figureRegion: textParsed.figureRegion || '',
+                  figureRegion: textParsed.figureRegion || fallbackFigureRegion(),
                   subject: llmSubject2,
                   detectedSubject: llmSubject2,
                   detail: {
@@ -191,7 +209,7 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
               knowledgePoint: visionParsed.knowledgePoint || '未知',
               textContent: visionParsed.textContent,
               sourceText: visionParsed.sourceText || '',
-              figureRegion: visionParsed.figureRegion || '',
+              figureRegion: visionParsed.figureRegion || fallbackFigureRegion(),
               subject: llmSubject,
               detectedSubject: llmSubject,
               detail: {
@@ -259,7 +277,7 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
                   knowledgePoint: visionParsed.knowledgePoint || '未知',
                   textContent: visionParsed.textContent,
                   sourceText: visionParsed.sourceText || '',
-                  figureRegion: visionParsed.figureRegion || '',
+                  figureRegion: visionParsed.figureRegion || fallbackFigureRegion(),
                   subject: visionLlmSubject,
                   detectedSubject: visionLlmSubject,
                   detail: {
@@ -283,7 +301,7 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
           knowledgePoint: parsed.knowledgePoint || '未知',
           textContent: parsed.textContent,
           sourceText: parsed.sourceText || '',
-          figureRegion: parsed.figureRegion || '',
+          figureRegion: parsed.figureRegion || fallbackFigureRegion(),
           subject: llmSubject,
           detectedSubject: llmSubject,
           detail: {
@@ -353,7 +371,7 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
           knowledgePoint: parsed.knowledgePoint || '未知',
           textContent: parsed.textContent,
           sourceText: parsed.sourceText || '',
-          figureRegion: parsed.figureRegion || '',
+          figureRegion: parsed.figureRegion || fallbackFigureRegion(),
           subject: visionLlmSubject,
           detectedSubject: visionLlmSubject,
           detail: {

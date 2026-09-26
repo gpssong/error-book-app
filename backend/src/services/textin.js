@@ -154,6 +154,9 @@ export async function recognizeFormula(imageBuffer, opts = {}) {
       latex: l.text || '',
       type: l.sub_type || 'formula',
       angle: l.angle || 0,
+      // v47+: 保留 position,用于后端 fallback 求"非文字区域"→ figureRegion
+      // TextIn /v2/recognize/formula 返回的 position 同样是 4 顶点归一化坐标 [x1,y1,...,x4,y4]
+      position: l.position || [],
     })),
     raw: data,
   }

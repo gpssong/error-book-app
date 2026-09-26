@@ -3,6 +3,7 @@ import {
   extractTitleAndKP,
   trimToFirstQuestion,
   formulaSanityCheck,
+  figureRegionFromTextPositions,
   KP_KEYWORDS,
 } from './textExtract.js'
 
@@ -142,5 +143,91 @@ describe('formulaSanityCheck — 拦幻觉(LLM 把根号/分式脑补成模板)'
       'D. \\lim_{n\\to\\infty} \\frac{1}{n}',
     ].join('\n')
     expect(formulaSanityCheck(text).ok).toBe(true)
+  })
+})
+
+describe('figureRegionFromTextPositions — v47 后端 fallback', () => {
+  // 工具:把 {x,y,w,h} 转成 4 顶点 polygon
+  const toPoly = (x, y, w, h) => [
+    x, y,
+    x + w, y,
+    x + w, y + h,
+    x, y + h,
+  ]
+
+  it('空数组 → null', () => {
+    expect(figureRegionFromTextPositions([])).toBe(null)
+    expect(figureRegionFromTextPositions(null)).toBe(null)
+    expect(figureRegionFromTextPositions(undefined)).toBe(null)
+  })
+
+  it('只有一条文字(覆盖整图 80%) → null(不是插图)', () => {
+    // 文字覆盖 90% 整图 → 补集太小 → 拒绝
+    const positions = [toPoly(0.05, 0.05, 0.9, 0.9)]
+    expect(figureRegionFromTextPositions(positions)).toBe(null)
+  })
+
+  it('上半部分全文字 + 下半空白 → 命中下半空白作为 figureRegion', () => {
+    // 上半 50% 全是文字,下半 50% 空白 → 应该返回下半区域
+    const positions = [toPoly(0, 0, 1, 0.5)]
+    const r = figureRegionFromTextPositions(positions)
+    expect(r).not.toBe(null)
+    // 下半空白 y ≈ 0.5, h ≈ 0.5
+    expect(r.y).toBeGreaterThanOrEqual(0.4)
+    expect(r.h).toBeGreaterThan(0.3)
+  })
+
+  it('左侧文字 + 右侧空白 → 命中右侧空白作为 figureRegion', () => {
+    // 左侧 30% 全是文字,右侧 70% 空白
+    const positions = [toPoly(0, 0, 0.3, 1)]
+    const r = figureRegionFromTextPositions(positions)
+    expect(r).not.toBe(null)
+    expect(r.x).toBeGreaterThan(0.2)
+    expect(r.w).toBeGreaterThan(0.3)
+  })
+
+  it('2 个文字块在四角 + 中间空白 → 命中中间空白', () => {
+    // 左上角文字 + 右下角文字 → 中间空白 = 示意图
+    const positions = [
+      toPoly(0, 0, 0.3, 0.2),  // 左上
+      toPoly(0.7, 0.8, 0.3, 0.2),  // 右下
+    ]
+    const r = figureRegionFromTextPositions(positions)
+    expect(r).not.toBe(null)
+    // 中间区域: x ≈ 0.3~0.7, y ≈ 0.2~0.8
+    expect(r.x).toBeLessThan(0.4)
+    expect(r.x + r.w).toBeGreaterThan(0.6)
+    expect(r.y).toBeLessThan(0.4)
+    expect(r.y + r.h).toBeGreaterThan(0.6)
+  })
+
+  it('文字稀疏(< 15% 整图) → null', () => {
+    // 一小块文字,补集 > 80% → 拒绝(可能纯文字题,无图)
+    const positions = [toPoly(0.45, 0.45, 0.05, 0.05)]
+    expect(figureRegionFromTextPositions(positions)).toBe(null)
+  })
+
+  it('坏数据(长度 < 8 / 非数组) → 跳过该条,继续用其余', () => {
+    const positions = [
+      toPoly(0, 0, 1, 0.5),  // 正常:上半文字
+      null,
+      undefined,
+      [0.1, 0.1, 0.2],  // 长度 3,坏数据
+      'not-an-array',
+      toPoly(0, 0.5, 1, 0.5),  // 正常:下半文字
+    ]
+    const r = figureRegionFromTextPositions(positions)
+    // 上下都覆盖 → 补集太小 → 拒绝(整图几乎全是文字,不是插图)
+    expect(r).toBe(null)
+  })
+
+  it('返回坐标都是 [0,1] 归一化', () => {
+    const positions = [toPoly(0, 0, 1, 0.4)]
+    const r = figureRegionFromTextPositions(positions)
+    expect(r).not.toBe(null)
+    expect(r.x).toBeGreaterThanOrEqual(0)
+    expect(r.y).toBeGreaterThanOrEqual(0)
+    expect(r.x + r.w).toBeLessThanOrEqual(1.001)
+    expect(r.y + r.h).toBeLessThanOrEqual(1.001)
   })
 })

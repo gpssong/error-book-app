@@ -71,11 +71,14 @@ export default function CameraScreen({ onNavigate }: Props) {
   // AI 识别相关
   const [recognizeSubject, setRecognizeSubject] = useState<Subject>('数学')
   const [recognizeProgress, setRecognizeProgress] = useState(0)
-  const [recognizedData, setRecognizedData] = useState<{ title: string; knowledgePoint: string; textContent: string } | null>(null)
+  // v47+: croppedUrls 让录入完成页能直接显示题图(无需跳详情页)
+  const [recognizedData, setRecognizedData] = useState<{ title: string; knowledgePoint: string; textContent: string; croppedUrls?: string[] } | null>(null)
   // P6(2026-09-26): 缓存最近一次裁剪图, 用于「换文本通道重试」
   const [lastCroppedUrl, setLastCroppedUrl] = useState<string>('')
   const [retrying, setRetrying] = useState(false)
   const [ocrSuccess, setOcrSuccess] = useState(false)
+  // v47+: 点击题图缩略图放大全屏查看
+  const [fullscreenImg, setFullscreenImg] = useState<string>('')
 
   // 手动编辑状态
   const [editTitle, setEditTitle] = useState('')
@@ -223,6 +226,7 @@ export default function CameraScreen({ onNavigate }: Props) {
         console.log(`[OCR] 学科自动纠正: ${[...correctedSubjects].join('、')}`)
       }
 
+      // v47+: croppedUrls 给录入完成页直接显示题图用(优先 uploadUrl,失败回退 croppedUrl dataURL)
       setRecognizedData({
         title: `批量识别 ${results.length} 道题`,
         knowledgePoint: recognizeSubject,
@@ -230,6 +234,9 @@ export default function CameraScreen({ onNavigate }: Props) {
           r.ok ? `第 ${i + 1} 题 ${r.title}\n${r.textContent}`
                : `第 ${i + 1} 题 识别失败:${r.message || '未知原因'}`
         ).join('\n\n'),
+        croppedUrls: results
+          .filter((r) => r.ok && (r.uploadUrl || r.croppedUrl))
+          .map((r) => r.uploadUrl || r.croppedUrl),
       })
       // P6(2026-09-26): 缓存最近一张裁剪图,供「换文本通道重试」使用
       // 取最后一张成功的(用户重试通常是想看最后那张)
@@ -539,6 +546,24 @@ export default function CameraScreen({ onNavigate }: Props) {
                 text={recognizedData.textContent}
                 className="text-xs text-slate-600 font-bold leading-relaxed"
               />
+              {/* v47+: 录入完成页直接显示题图,无需跳详情页(几何题图丢失体感修复) */}
+              {recognizedData.croppedUrls && recognizedData.croppedUrls.length > 0 && (
+                <div className="mt-4 pt-3 border-t border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-500 mb-2">原题图(点击放大)</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {recognizedData.croppedUrls.map((u, i) => (
+                      <img
+                        key={i}
+                        src={u}
+                        className="w-full max-h-40 object-contain rounded-lg border border-slate-200 bg-slate-50 cursor-zoom-in"
+                        onClick={() => setFullscreenImg(u)}
+                        loading="lazy"
+                        alt={`第 ${i + 1} 题原图`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* P6(2026-09-26): 视觉塌缩时换文本通道重试按钮 */}
@@ -575,6 +600,27 @@ export default function CameraScreen({ onNavigate }: Props) {
               ✓ 查看错题库
             </button>
           </div>
+
+          {/* v47+: 题图全屏查看 Modal(点黑色背景关闭) */}
+          {fullscreenImg && (
+            <div
+              className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+              onClick={() => setFullscreenImg('')}
+            >
+              <img
+                src={fullscreenImg}
+                className="max-w-full max-h-full object-contain"
+                alt="放大查看"
+              />
+              <button
+                onClick={() => setFullscreenImg('')}
+                className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/20 text-white text-lg flex items-center justify-center"
+                aria-label="关闭"
+              >
+                ✕
+              </button>
+            </div>
+          )}
         </>
       )}
 

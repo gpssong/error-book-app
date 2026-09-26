@@ -298,10 +298,11 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
           <div className="px-4 py-4 space-y-4">
             <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
               <div className="relative">
+                {/* v47+: 主图改为 object-contain 完整显示(题图含文字,必须看清),不再用 object-cover 裁切 */}
                 <img
                   src={resolveImageUrl(displayImageUrl)}
                   alt={err.title}
-                  className="w-full h-48 object-cover"
+                  className="w-full max-h-72 object-contain bg-slate-50"
                 />
                 {/* 独立手写图层：SVG 叠加在原图上 */}
                 {hasHandwriting && currentHandwritingSvg && (
@@ -331,6 +332,10 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
                   <Icon.Eraser /> {hasHandwriting ? '清除手写内容' : '已清除'}
                 </button>
               </div>
+              {/* v47+: 提示用户在 regionSelect 漏框图时可补救 */}
+              <p className="text-[10px] text-slate-400 py-2 text-center border-t border-slate-100">
+                如题图不全,可点「批注」涂抹后重新框选
+              </p>
             </div>
 
             <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
@@ -352,22 +357,8 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
               </div>
             </div>
 
-            {/* 题目插图(AI 识别出的关键示意图:几何图/物理装置/化学结构等) */}
-            {(err.figureBase64 || err.figureImageUrl) && (
-              <div className="bg-white rounded-2xl p-4 shadow-sm space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-base">📷</span>
-                  <span className="text-xs font-extrabold text-slate-700">题目插图</span>
-                </div>
-                <img
-                  src={resolveImageUrl(err.figureImageUrl) || err.figureBase64}
-                  alt="题目插图"
-                  loading="lazy"
-                  className="w-full max-h-56 object-contain rounded-lg bg-slate-50"
-                />
-                <p className="text-[10px] text-slate-400">AI 自动从题目中裁出的关键示意图,复习时看图解题</p>
-              </div>
-            )}
+            {/* v47-: 删独立的「题目插图」卡片(figureBase64 命中率仅 1.4%,且主图已含图)。
+                题图已在顶部主图完整展示,几何/物理示意图不再单独卡片。 */}
 
             {/* 诗词原文 / 阅读文章原文(仅语文题有)*/}
             {err.sourceText && (
