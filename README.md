@@ -1,10 +1,10 @@
-# 错题本 App (v47)
+# 错题本 App (v47.1)
 
 多子女错题本应用，支持 **拍照识题 + AI讲解(看图) + 跨页拍题 + 手写批注 + 错题管理 + 打印同类题数量可选 + 多用户账号隔离 + 语文原文提取 + 学科 LLM 自动分类 + 登录态持久化 + 图片性能根治 + 列表分页(无限滚动) + OCR 视觉塌缩多层防护 + 录入明细数学公式渲染 + 录入完成页图预览 + 详情页主图完整显示**。
 
 **工程基建**: 前后端测试(vitest)+ ESLint + GitHub Actions CI + `tsc` 门禁(见「开发/测试/CI」章节)。
 
-**最新版本**: `error-book-v47-figure-preview.apk`
+**最新版本**: `error-book-v47.1-print-figure.apk`
 **线上地址**: http://error.93gushi.com:4040
 **内网直连**: http://192.168.0.32:4040(飞牛 NAS 局域网)
 
@@ -312,6 +312,9 @@ crontab -l | grep ddns
 ## 版本历史
 
 | 版本 | 日期 | 主要变化 |
+|---|---|---|
+| **v47.1** | 2026-09-26 | 打印预览页缺题图 hotfix(v47 漏修页面):v47 修了录入完成页 + 详情页,但 `PrintPreviewScreen.tsx:317` 题卡只渲染 `<LatexPreview>`,**完全没读 `err.imageUrl/imageBase64`** —— 孩子打出来的题目没有图,几何/物理题根本看不懂。修复: L317 题卡在 LatexPreview 上方插入 `<img src={resolveImageUrl(err.imageUrl \|\| err.imageBase64)}>`,`object-contain` + `bg-slate-50` + 2 列 `max-h-[100px]` / 1 列 `max-h-[160px]`(`print:` 加倍)。**只改 1 文件 17 行**,不动 v47 已部署代码。前端 typecheck ✓ / build ✓(chunk `index-Cs8KLGtX.js` 611412 bytes);容器 bind-mount 重启刷新(`error-book-nginx restart`,v44 P2 老坑)。APK: `error-book-v47.1-print-figure.apk` |
+| **v47** | 2026-09-26 | 题目插图回归(录入完成页图预览 + 详情页主图完整显示 + figureRegion fallback):① **P0** `CameraScreen` state 扩 `croppedUrls` + batchResult 加 grid 缩略图(`max-h-40 object-contain`)+ 全屏 Modal(点击黑底关闭);② **P1 后端** `pipeline/textExtract.js` 新增 `figureRegionFromTextPositions`(polygon→bbox→合并→100×100 网格 flood-fill,阈值:文字密度>80% / 补集<15% / 补集>92% 拒绝)+ `services/textin.js` 公式端点补 `position` + `routes/ocr.js` 5 处接入 `fallbackFigureRegion()`;③ **P3** `ErrorDetailScreen` 主图改 `object-contain max-h-72` + 删独立插图卡片 + 加补救提示。后端 test **58/58**(原 50 + 新 8 figureRegionFromTextPositions);前端 test 17/17。后端 fallback 预期几何题 figureBase64 命中率从 1.4% → ≥30%。APK: `error-book-v47-figure-preview.apk` |
 |---|---|---|
 | **v46.1** | 2026-09-26 | LatexPreview 裸 LaTeX 自动识别(录入明细数学公式渲染): v46 修好了 OCR 公式识别(还原 `\sqrt{x^{2}+4}` 等),但录入明细页只把 LaTeX 字符串当文本显示,用户看到的是源码不是公式 —— 识别等于白做。修复: `components/LatexPreview.tsx` 在原 `$...$` / `$$...$$` 解析后做第二遍兜底 —— 按行扫描,含 TeX 命令(`\sqrt`/`\frac`/`\dfrac`/`\sum`/`\int`/`^{`/`_{` 等)且 `$` 配对完整的行整行升级为块级公式渲染;中文题头/选项标签/纯函数表达式 `C. x(4-x)(0<x<4)` 不含 TeX 命令 → 保留 text,**零误伤**。新增 9 条单元测试覆盖裸 LaTeX / 显式 `$` 优先 / 奇数 `$` 跳过 / 纯中文 / 空 / 纯函数表达式。前端 test **17/17** / typecheck ✓ / build ✓(chunk `index-DGSACkjz.js`)。APK: `error-book-v46.1-latex-render.apk` |
 | **v46** | 2026-09-26 | OCR 视觉塌缩多层防护(治「代数最小值」等高频套路题被脑补成 `a+1/a+4`):① **P0 治本** `routes/ocr.js` 并行调 `recognizeFormula`(/v2/recognize/formula),把权威 LaTeX 注入 `visionFallback` 的 userPrompt,视觉模型从「白板读图」变「按锚点补全」;② **P1** `latexNormalize.js` Step 2 只对单字符 radicand 补 `{}`,不再毁 `\sqrt{x^2+4}`;③ **P2** `pipeline/textExtract.js` 新增 `formulaSanityCheck(textContent)` 纯函数(选项<4 / symbols<3 / 形状重复 / 无 LaTeX 结构),视觉主路径返回前 + 低质量重读触发器都接入,不通过则降级 `semanticParseText` 文本路径;④ **P5** `routes/ocr.js` 读 `X-TextIn-App-Id/Secret-Code` 头透传给 TextIn,`config.html` 配的 key 真正生效;⑤ **P6** `POST /api/ocr` 接受 `forceTextPath=true` 跳过视觉兜底,前端 batchResult 页加「换通道重试」按钮;⑥ **hotfix** `callAnthropicAPI` 加 `imageBase64` 支持,`visionFallback` MiniMax 分支切 Anthropic Messages 协议 + image block(之前用 OpenAI /chat/completions 协议 MiniMax 不支持 → 404)。后端 test **50/50** / lint 0 error;前端 typecheck ✓。APK: `error-book-v46-ocr-fix.apk` |
