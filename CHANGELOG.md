@@ -1,5 +1,37 @@
 # Changelog
 
+## v48.1-hotfix (2026-09-26) - 错题历史页「反复加载/闪烁」:loadPage ref-guard
+
+### 背景
+
+v48 部署后用户截图(2026-09-26):「错题历史」页(天天 · 0道错题)**一直卡在「加载中…」反复闪**,列表永远渲染不出。
+
+**根因**:`ErrorListScreen.loadPage` 的 `useCallback` deps 里含 `loadingMore`(state)。
+- 首次 `loadPage(true)` → `setLoadingMore(true)` → re-render → `loadPage` 引用变
+- `useEffect([activeChildId, filterSubject, loadPage])` 看到 loadPage 变 → 重新跑 → 重置 `pageItems=[]` 又 `loadPage(true)`
+- 无限循环,每次飞行中的请求被 effect 重置的 pageItems 冲掉 → 页面反复闪「加载中…」
+
+### 改动(1 文件 + 1 测试)
+
+| 类别 | 文件 | 内容 |
+|---|---|---|
+| **前端 P0 修复** | `frontend/src/components/ErrorListScreen.tsx` | 把防重入逻辑从读 `loadingMore` state 改成读 `loadingMoreRef.current`(ref);`loadPage` deps 只保留 `[activeChildId, filterSubject]`,**排除 `loadingMore`**。`onScroll` 的 guard 同步改读 ref。加载态 UI 仍读 `loadingMore` state(渲染用),不影响引用稳定性 |
+| **前端 P1 回归测试** | `frontend/src/components/ErrorListLoadingGuard.test.ts`(新增 2 条) | 复刻修复后的 ref-guard 逻辑,验证:并发 N 次 `loadPage(true)` 仅首次发请求(其余被 ref 拦截);上次完成后下一次可正常发请求(ref 已复位) |
+
+### 设计决策
+
+- **ref 而非 state 做防重入**:防重入本身是「并发请求拦截」语义,不需要触发 re-render;改用 state 会让 loadPage 引用不稳定 → effect 抖动 → 循环。UI 显示「加载中…」继续用 state(它本来就是给渲染的)
+- **不改后端 / 不引入 AbortController**:`getErrorsPage` 已有 offset 语义,ref-guard 已足够;AbortController 留 v49+ 若切 child 快时再考虑
+- **回归测试复刻逻辑而非 mount 组件**:项目现有测试风格(LatexPreview/sliceSimilarQuestions)都是纯函数复刻,避免引入 @testing-library 依赖
+
+### 验证
+
+- `pnpm typecheck` ✓ / `pnpm build` ✓(chunk `index-DfnP8_wF.js` 613.64kB)
+- `pnpm test` **19/19**(原 17 + 新 2 guard)
+- 线上:重装 `error-book-v48.1-fix-infinite-loading.apk` → 错题历史页正常渲染,不再闪「加载中…」
+
+---
+
 ## v48 (2026-09-26) - 打印预览「图不全 + 去手写」:refine-figure 端点 + CSS clip-path
 
 ### 背景

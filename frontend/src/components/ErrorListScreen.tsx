@@ -26,9 +26,14 @@ export default function ErrorListScreen({ onNavigate }: Props) {
   // P3 无限滚动: 本地分页列表(load + 追加), 服务端按 childId/subject 排序+筛选。
   // 共享 store.errors(全量)仍由 AppContext 维护, 供 Dashboard 本周统计/打印页「全选」用;
   // 本页多选作用域 = 当前已加载的列表页。
+  // v48-hotfix: 把 loadingMore 拆到 ref, 不再让 useEffect dep 里的 loadPage 因 loadingMore 切换而重建;
+  // 否则首次 loadPage(true) 触发的 setState(loading=true) → re-render → loadPage 引用变 → effect 重新跑
+  // → 重置 pageItems → 又 loadPage(true) → 无限循环, 页面反复闪「加载中…」。
   const [pageItems, setPageItems] = useState<ErrorItem[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
+  const loadingMoreRef = useRef(false)
+  const firstLoadDoneRef = useRef(false)
   const offsetRef = useRef(0)
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -36,8 +41,10 @@ export default function ErrorListScreen({ onNavigate }: Props) {
   const childErrors = errors.filter((e) => e.childId === activeChildId)
 
   // 拉取指定页码(reset 或追加); offsetRef 记录下一个起始位置
+  // v48-hotfix: 把「防重入」逻辑全走 ref, 不读 loadingMore state; deps 稳定, 只在 child/subject 真正变时换引用。
   const loadPage = useCallback(async (reset: boolean) => {
-    if (loadingMore) return
+    if (loadingMoreRef.current) return
+    loadingMoreRef.current = true
     setLoadingMore(true)
     const capturedChild = activeChildId
     const capturedSubject = filterSubject
@@ -57,11 +64,15 @@ export default function ErrorListScreen({ onNavigate }: Props) {
     } catch {
       // 网络错误: 静默, 保留已加载; 无限滚动哨兵可再次触发重试
     } finally {
+      loadingMoreRef.current = false
       setLoadingMore(false)
     }
-  }, [activeChildId, filterSubject, loadingMore])
+    // 注意: deps 必须排除 loadingMore, 否则每次 setLoadingMore 都重建 loadPage 引发循环
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChildId, filterSubject])
 
   // child / subject 变化 → 重置列表
+  // v48-hotfix: 不传 loadPage 进 deps, 改用手动捕获 child/subject 的变化触发重置。
   useEffect(() => {
     offsetRef.current = 0
     setPageItems([])
@@ -72,11 +83,11 @@ export default function ErrorListScreen({ onNavigate }: Props) {
   // 无限滚动: 滚动容器接近底部且还有更多 → 追加
   const onScroll = useCallback(() => {
     const el = listRef.current
-    if (!el || !hasMore || loadingMore) return
+    if (!el || !hasMore || loadingMoreRef.current) return
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 240) {
       loadPage(false)
     }
-  }, [hasMore, loadingMore, loadPage])
+  }, [hasMore, loadPage])
 
   const toggleSelect = (id: string) => {
     setSelectedErrors((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
