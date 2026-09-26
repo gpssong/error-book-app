@@ -327,11 +327,23 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
                       <div
                         className={`px-2 py-2 print:p-3 ${printLayout === '2列' ? 'min-h-[120px] max-h-[200px] print:max-h-none' : 'min-h-[160px] max-h-[280px] print:max-h-none'}`}
                       >
-                        {/* v47+: 题图(用户 regionSelect 裁出的题图,本身就含文字 + 示意图)。
-                           必须显示 —— 几何/物理题没有题图孩子根本看不懂。
-                           优先 imageUrl(轻量静态图,可缓存); 缺失时回退 base64。
-                           max-h 控制版式, object-contain 保证完整显示(不裁切)。 */}
-                        {(err.imageUrl || err.imageBase64) && (
+                        {/* v47.2: 题目中的「示意图」(原书印刷的几何图/物理装置/化学结构等),
+                           不是整张题目照片!整张题目照片是孩子拍的歪的整页,
+                           打印场景孩子不需要看自己拍的歪照,需要看原书印刷图才能看懂题。
+                           优先 figureImageUrl(v44 静态化);缺失回退 figureBase64(老数据)。
+                           都缺 → 显示原图 imageUrl/imageBase64(整张题目,含手写批注)。
+                           高度按 print 排版给:1 列 240px,2 列 160px(打印倍增)。 */}
+                        {(err.figureImageUrl || err.figureBase64) ? (
+                          <img
+                            src={resolveImageUrl(err.figureImageUrl || err.figureBase64)}
+                            alt={`${err.title} 示意图`}
+                            className={`w-full object-contain rounded-md bg-white border border-slate-200 mb-2 print:mb-2 ${
+                              printLayout === '2列'
+                                ? 'max-h-[140px] print:max-h-[200px]'
+                                : 'max-h-[200px] print:max-h-[280px]'
+                            }`}
+                          />
+                        ) : (err.imageUrl || err.imageBase64) ? (
                           <img
                             src={resolveImageUrl(err.imageUrl || err.imageBase64)}
                             alt={err.title}
@@ -341,7 +353,7 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
                                 : 'max-h-[160px] print:max-h-[240px]'
                             }`}
                           />
-                        )}
+                        ) : null}
                         {err.textContent ? (
                           <LatexPreview
                             text={err.textContent}

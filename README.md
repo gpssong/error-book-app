@@ -1,10 +1,10 @@
-# 错题本 App (v47.1)
+# 错题本 App (v47.2)
 
 多子女错题本应用，支持 **拍照识题 + AI讲解(看图) + 跨页拍题 + 手写批注 + 错题管理 + 打印同类题数量可选 + 多用户账号隔离 + 语文原文提取 + 学科 LLM 自动分类 + 登录态持久化 + 图片性能根治 + 列表分页(无限滚动) + OCR 视觉塌缩多层防护 + 录入明细数学公式渲染 + 录入完成页图预览 + 详情页主图完整显示**。
 
 **工程基建**: 前后端测试(vitest)+ ESLint + GitHub Actions CI + `tsc` 门禁(见「开发/测试/CI」章节)。
 
-**最新版本**: `error-book-v47.1-print-figure.apk`
+**最新版本**: `error-book-v47.2-print-figure-diagram.apk`
 **线上地址**: http://error.93gushi.com:4040
 **内网直连**: http://192.168.0.32:4040(飞牛 NAS 局域网)
 
@@ -312,6 +312,9 @@ crontab -l | grep ddns
 ## 版本历史
 
 | 版本 | 日期 | 主要变化 |
+|---|---|---|
+| **v47.2** | 2026-09-26 | 打印预览页图源改用「示意图」(`figureImageUrl/figureBase64`)而非「整张题目照片」(`imageUrl/imageBase64`):v47.1 用错了图源,把用户拍摄的整张歪照当「题图」渲染,孩子打印出来根本看不出原书印刷的立方体/物理装置。修复: 打印题卡图片分支改成 `figureImageUrl/figureBase64`(原书示意图,2 列 140px/1 列 200px,print 加倍) → 兜底 `imageUrl/imageBase64`(整张题照,更小高度)。详情页(复习批注)仍用 imageUrl —— 语义不同。**只改 1 文件 28 行**。已知: 存量 figureBase64 几乎空,旧错题回退到整张题照(v47 OCR fallback 上线后预期 ≥30%); 让孩子「批注涂抹后重新拍一道」可触发后端 fallback 重写。前端 typecheck ✓ / build ✓(chunk `index-DICFySK_.js` 611714 bytes)。APK: `error-book-v47.2-print-figure-diagram.apk` |
+| **v47.1** | 2026-09-26 | 打印预览页缺题图 hotfix(v47 漏修页面):v47 修了录入完成页 + 详情页,但 `PrintPreviewScreen.tsx:317` 题卡只渲染 `<LatexPreview>`,**完全没读 `err.imageUrl/imageBase64`** —— 孩子打出来的题目没有图,几何/物理题根本看不懂。修复: L317 题卡在 LatexPreview 上方插入 `<img src={resolveImageUrl(err.imageUrl \|\| err.imageBase64)}>`,`object-contain` + `bg-slate-50` + 2 列 `max-h-[100px]` / 1 列 `max-h-[160px]`(`print:` 加倍)。**只改 1 文件 17 行**,不动 v47 已部署代码。前端 typecheck ✓ / build ✓(chunk `index-Cs8KLGtX.js` 611412 bytes);容器 bind-mount 重启刷新(`error-book-nginx restart`,v44 P2 老坑)。APK: `error-book-v47.1-print-figure.apk` |
 |---|---|---|
 | **v47.1** | 2026-09-26 | 打印预览页缺题图 hotfix(v47 漏修页面):v47 修了录入完成页 + 详情页,但 `PrintPreviewScreen.tsx:317` 题卡只渲染 `<LatexPreview>`,**完全没读 `err.imageUrl/imageBase64`** —— 孩子打出来的题目没有图,几何/物理题根本看不懂。修复: L317 题卡在 LatexPreview 上方插入 `<img src={resolveImageUrl(err.imageUrl \|\| err.imageBase64)}>`,`object-contain` + `bg-slate-50` + 2 列 `max-h-[100px]` / 1 列 `max-h-[160px]`(`print:` 加倍)。**只改 1 文件 17 行**,不动 v47 已部署代码。前端 typecheck ✓ / build ✓(chunk `index-Cs8KLGtX.js` 611412 bytes);容器 bind-mount 重启刷新(`error-book-nginx restart`,v44 P2 老坑)。APK: `error-book-v47.1-print-figure.apk` |
 | **v47** | 2026-09-26 | 题目插图回归(录入完成页图预览 + 详情页主图完整显示 + figureRegion fallback):① **P0** `CameraScreen` state 扩 `croppedUrls` + batchResult 加 grid 缩略图(`max-h-40 object-contain`)+ 全屏 Modal(点击黑底关闭);② **P1 后端** `pipeline/textExtract.js` 新增 `figureRegionFromTextPositions`(polygon→bbox→合并→100×100 网格 flood-fill,阈值:文字密度>80% / 补集<15% / 补集>92% 拒绝)+ `services/textin.js` 公式端点补 `position` + `routes/ocr.js` 5 处接入 `fallbackFigureRegion()`;③ **P3** `ErrorDetailScreen` 主图改 `object-contain max-h-72` + 删独立插图卡片 + 加补救提示。后端 test **58/58**(原 50 + 新 8 figureRegionFromTextPositions);前端 test 17/17。后端 fallback 预期几何题 figureBase64 命中率从 1.4% → ≥30%。APK: `error-book-v47-figure-preview.apk` |

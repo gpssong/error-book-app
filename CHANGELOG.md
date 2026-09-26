@@ -1,5 +1,46 @@
 # Changelog
 
+## v47.2 (2026-09-26) - 打印预览页显示「示意图」而非「整张题目照片」
+
+### 背景
+
+v47.1 修了打印预览页缺题图,但**用错了图源** —— 渲染的是 `imageUrl/imageBase64`(用户拍摄整张题目的歪照,含孩子手写 + 拍歪的)。
+用户真机截图(2026-09-26)反馈:「打印预览中显示的题目中的图不是这个题目的照片,是题目中提到的如图」。
+
+**正确理解**:
+- `imageUrl / imageBase64` = **整张题目照片**(孩子拍的整页,App 内复习/批注用)
+- `figureImageUrl / figureBase64` = **题目中提到的示意图**(原书印刷的立方体/物理装置/化学结构,**打印场景孩子要做题必须看这个**)
+
+打印场景下孩子打印题目是为了做题,**只需要看原书印刷图**(清晰的、能跟题干对照的);
+整张拍摄照(拍歪/手写)在打印纸上毫无意义。
+
+### 改动(1 文件,28 行)
+
+| 类别 | 文件 | 内容 |
+|---|---|---|
+| **修复** | `frontend/src/components/PrintPreviewScreen.tsx:317-358` | 打印题卡图片分支:`figureImageUrl/figureBase64`(原书示意图,border-slate-200 + bg-white)→ 兜底 `imageUrl/imageBase64`(整张题照,border-slate-100 + bg-slate-50)。前者高度更大(2 列 140px/1 列 200px,print 加倍到 200/280px),后者小一些(2 列 100px/1 列 160px) |
+
+### 设计决策
+
+- **打印场景语义翻转**:详情页(复习批注)用 imageUrl(可批注),**打印场景用 figureImageUrl**(题目里印的图)
+- **三层 fallback**:示意图 > 整张题照 > 无图(空),任意一层有效都显示
+- **背景色区分**:示意图是原书印刷 → 白色底 + 深边;整张题照是拍摄 → 灰色底 + 浅边
+- **不修后端 OCR fallback**:v47 已部署,本次只调打印页前端
+
+### 已知限制
+
+- **存量数据 figureBase64/figureImageUrl 几乎为空**(v41 后 73 条错题 1.4% 命中率,v47 后端 fallback 上线后预期 ≥30%);
+  旧错题打印时仍会回退到整张题照,需让孩子「批注涂抹后重新拍一道」或「重新批注后保存」触发后端 fallback 重写
+- **v48+ 可选**:详情页也加 `figureImageUrl`(语义同样,但 UI 不冲突:详情页是 imageUrl 顶部主图,下方可加 figureImageUrl 卡片)
+
+### 验证
+
+- 前端 `pnpm typecheck` ✓ / `pnpm build` ✓(chunk `index-DICFySK_.js` 611714 bytes)
+- 飞牛 dist 部署: `curl http://192.168.0.32:4040/assets/index-DICFySK_.js` → HTTP 200 / 611714 bytes,grep `figureImageUrl` ×2 / `figureBase64` ×15
+- APK `error-book-v47.2-print-figure-diagram.apk` 5.6MB → 飞牛同步盘 + 本地 `apk/`
+
+---
+
 ## v47.1 (2026-09-26) - 打印预览页缺题图 hotfix
 
 ### 背景
