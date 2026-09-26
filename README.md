@@ -1,10 +1,10 @@
-# 错题本 App (v46)
+# 错题本 App (v46.1)
 
-多子女错题本应用，支持 **拍照识题 + 题目插图单独保存 + AI讲解(看图) + 跨页拍题 + 手写批注 + 错题管理 + 打印同类题数量可选 + 多用户账号隔离 + 语文原文提取 + 学科 LLM 自动分类 + 登录态持久化 + 图片性能根治 + 列表分页(无限滚动) + OCR 视觉塌缩多层防护**。
+多子女错题本应用，支持 **拍照识题 + 题目插图单独保存 + AI讲解(看图) + 跨页拍题 + 手写批注 + 错题管理 + 打印同类题数量可选 + 多用户账号隔离 + 语文原文提取 + 学科 LLM 自动分类 + 登录态持久化 + 图片性能根治 + 列表分页(无限滚动) + OCR 视觉塌缩多层防护 + 录入明细数学公式渲染**。
 
 **工程基建**: 前后端测试(vitest)+ ESLint + GitHub Actions CI + `tsc` 门禁(见「开发/测试/CI」章节)。
 
-**最新版本**: `error-book-v46-ocr-fix.apk`
+**最新版本**: `error-book-v46.1-latex-render.apk`
 **线上地址**: http://error.93gushi.com:4040
 **内网直连**: http://192.168.0.32:4040(飞牛 NAS 局域网)
 
@@ -313,6 +313,7 @@ crontab -l | grep ddns
 
 | 版本 | 日期 | 主要变化 |
 |---|---|---|
+| **v46.1** | 2026-09-26 | LatexPreview 裸 LaTeX 自动识别(录入明细数学公式渲染): v46 修好了 OCR 公式识别(还原 `\sqrt{x^{2}+4}` 等),但录入明细页只把 LaTeX 字符串当文本显示,用户看到的是源码不是公式 —— 识别等于白做。修复: `components/LatexPreview.tsx` 在原 `$...$` / `$$...$$` 解析后做第二遍兜底 —— 按行扫描,含 TeX 命令(`\sqrt`/`\frac`/`\dfrac`/`\sum`/`\int`/`^{`/`_{` 等)且 `$` 配对完整的行整行升级为块级公式渲染;中文题头/选项标签/纯函数表达式 `C. x(4-x)(0<x<4)` 不含 TeX 命令 → 保留 text,**零误伤**。新增 9 条单元测试覆盖裸 LaTeX / 显式 `$` 优先 / 奇数 `$` 跳过 / 纯中文 / 空 / 纯函数表达式。前端 test **17/17** / typecheck ✓ / build ✓(chunk `index-DGSACkjz.js`)。APK: `error-book-v46.1-latex-render.apk` |
 | **v46** | 2026-09-26 | OCR 视觉塌缩多层防护(治「代数最小值」等高频套路题被脑补成 `a+1/a+4`):① **P0 治本** `routes/ocr.js` 并行调 `recognizeFormula`(/v2/recognize/formula),把权威 LaTeX 注入 `visionFallback` 的 userPrompt,视觉模型从「白板读图」变「按锚点补全」;② **P1** `latexNormalize.js` Step 2 只对单字符 radicand 补 `{}`,不再毁 `\sqrt{x^2+4}`;③ **P2** `pipeline/textExtract.js` 新增 `formulaSanityCheck(textContent)` 纯函数(选项<4 / symbols<3 / 形状重复 / 无 LaTeX 结构),视觉主路径返回前 + 低质量重读触发器都接入,不通过则降级 `semanticParseText` 文本路径;④ **P5** `routes/ocr.js` 读 `X-TextIn-App-Id/Secret-Code` 头透传给 TextIn,`config.html` 配的 key 真正生效;⑤ **P6** `POST /api/ocr` 接受 `forceTextPath=true` 跳过视觉兜底,前端 batchResult 页加「换通道重试」按钮;⑥ **hotfix** `callAnthropicAPI` 加 `imageBase64` 支持,`visionFallback` MiniMax 分支切 Anthropic Messages 协议 + image block(之前用 OpenAI /chat/completions 协议 MiniMax 不支持 → 404)。后端 test **50/50** / lint 0 error;前端 typecheck ✓。APK: `error-book-v46-ocr-fix.apk` |
 | **v45** | 2026-09-26 | 错题列表分页 + 无限滚动(千条级仍流畅, P3 性能兜底): `GET /api/errors?paged=1&offset=&limit=`(默认全量不变, 分页返回 `{items,hasMore,total}` + `X-Total-Count` 头, Mongo `countDocuments`+`skip/limit`); 前端 `ErrorListScreen` 无限滚动(服务端分页 + 学科服务端筛选 + 竞态保护), 多选作用域=已加载页; 共享 `store.errors` 保留供 Dashboard 统计/打印全选。顺带补提交 v44 P1 详情投影(`GET /:id` 默认 `.select` 排除大 base64)。APK: `error-book-v45-paged-list.apk` |
 | **v44** | 2026-09-26 | 图片性能根治(解决"错题多 + 公网打开慢"): ① P0 列表接口 `GET /api/errors` 加投影排除两张大 base64(列表 JSON 从 ~11MB 降到纯文字);② P1 新增 `GET /api/errors/:id/image` + `GET /:id?full=1` 按需取图;③ P2a 入库前把裁剪图落盘 `/uploads` 静态文件,`imageUrl` 存 URL(可缓存),`cropImage` 加 `maxDim=1280` 缩放 + `quality=0.85`;④ P2c 存量迁移脚本 `backend/scripts/migrate-images-to-static.js`(dry-run + 自动备份,`imageBase64` 落盘清空、`figureBase64` 保留供 AI);compose 加 uploads 持久化卷、nginx.conf 加 `/uploads` 静态 location。需重新出 APK |
