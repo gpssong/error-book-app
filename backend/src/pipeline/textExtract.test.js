@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { extractTitleAndKP, trimToFirstQuestion, KP_KEYWORDS } from './textExtract.js'
+import {
+  extractTitleAndKP,
+  trimToFirstQuestion,
+  formulaSanityCheck,
+  KP_KEYWORDS,
+} from './textExtract.js'
 
 describe('extractTitleAndKP', () => {
   it('去掉题号取前 20 字做 title', () => {
@@ -59,5 +64,83 @@ describe('trimToFirstQuestion', () => {
   it('支持中文顿号/全角点 1．', () => {
     const text = '1．甲题\nx\n2．乙题\ny'
     expect(trimToFirstQuestion(text)).toBe('1．甲题\nx')
+  })
+})
+
+describe('formulaSanityCheck — 拦幻觉(LLM 把根号/分式脑补成模板)', () => {
+  // 用户实际遇到的崩坏: [B] √(x²+4)+4/√(x²+4) 被压成 "a+1/a+4"
+  it('4 个选项都套同一模板(都 a+1/a+C) → 拒绝', () => {
+    const text = [
+      '1. 下列代数式中最小值是 4 的有',
+      'A. a + 1/a + 4',
+      'B. a + 1/a + 4',
+      'C. a + 1/a + 4',
+      'D. a + 1/a + 4',
+    ].join('\n')
+    const r = formulaSanityCheck(text)
+    expect(r.ok).toBe(false)
+    expect(r.reason).toMatch(/模板化/)
+  })
+
+  it('4 个选项独立符号 < 3 → 拒绝', () => {
+    const text = [
+      '1. 题干',
+      'A. a + b',
+      'B. a + 1',
+      'C. a + 2',
+      'D. a + 3',
+    ].join('\n')
+    const r = formulaSanityCheck(text)
+    expect(r.ok).toBe(false)
+    // 实际触发顺序: symbols 检查在 toosimilar 之前
+    expect(r.reason).toMatch(/symbols/)
+  })
+
+  it('没有 LaTeX 结构(根号/分式/上标全丢了) → 拒绝', () => {
+    const text = [
+      '1. 题干',
+      'A. x + y + 1',
+      'B. x + y + 2',
+      'C. x + y + 3',
+      'D. x + y + 4',
+    ].join('\n')
+    const r = formulaSanityCheck(text)
+    expect(r.ok).toBe(false)
+    // 触发顺序: 4 选项形状全部相同(toosimilar)先命中
+    expect(r.reason).toMatch(/模板化/)
+  })
+
+  it('选项数 < 4 → 拒绝', () => {
+    const r = formulaSanityCheck('1. 题干\nA. √x + 1\nB. √x + 2')
+    expect(r.ok).toBe(false)
+    expect(r.reason).toMatch(/options/)
+  })
+
+  it('空串 → 拒绝', () => {
+    expect(formulaSanityCheck('').ok).toBe(false)
+    expect(formulaSanityCheck(null).ok).toBe(false)
+    expect(formulaSanityCheck(undefined).ok).toBe(false)
+  })
+
+  it('真实形态的 4 个含根式/分式的选项 → 通过', () => {
+    const text = [
+      '1. 下列代数式中最小值是 4 的有',
+      'A. \\frac{x}{4}+\\frac{1}{x}+3',
+      'B. \\sqrt{x^{2}+4}+\\frac{4}{\\sqrt{x^{2}+4}}',
+      'C. x(4-x) \\quad (0<x<4)',
+      'D. m^{2}+\\frac{2}{\\sqrt{n(m^{2}-n)}}',
+    ].join('\n')
+    expect(formulaSanityCheck(text).ok).toBe(true)
+  })
+
+  it('通过形态: 上下标 + 简单 LaTeX 命令', () => {
+    const text = [
+      '1. 求和',
+      'A. \\sum_{i=1}^{n} i',
+      'B. \\prod_{i=1}^{n} i',
+      'C. \\int_{0}^{1} x\\,dx',
+      'D. \\lim_{n\\to\\infty} \\frac{1}{n}',
+    ].join('\n')
+    expect(formulaSanityCheck(text).ok).toBe(true)
   })
 })

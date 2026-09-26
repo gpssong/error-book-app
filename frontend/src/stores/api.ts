@@ -273,7 +273,7 @@ const api = {
     request<{ url: string }>('/upload/base64', { method: 'POST', body: JSON.stringify(data) }),
 
   // ─── 题目 OCR 识别 ───────────────────────────────────────────────────────────
-  recognizeQuestion: (data: { imageBase64: string; subject?: string }) => {
+  recognizeQuestion: (data: { imageBase64: string; subject?: string; forceTextPath?: boolean }) => {
     // 从后端缓存读取当前启用的 TextIn key（已预取，无竞态）
     const extraHeaders: Record<string, string> = {}
     try {
@@ -283,6 +283,10 @@ const api = {
         extraHeaders['X-TextIn-Secret-Code'] = textin.secretCode
       }
     } catch { /* 忽略 */ }
+    // P6(2026-09-26):「重试识别」按钮传 forceTextPath=true,跳过视觉兜底走纯文本路径
+    // 给用户一个逃生口:视觉模型塌缩时可强制走 TextIn OCR + LLM 文本合并
+    const body = { ...data }
+    if (data.forceTextPath) body.forceTextPath = true
     return request<{
       title: string
       knowledgePoint: string
@@ -295,7 +299,7 @@ const api = {
     }>('/ocr', {
       method: 'POST',
       headers: extraHeaders,
-      body: JSON.stringify(data),
+      body: JSON.stringify(body),
     })
   },
 

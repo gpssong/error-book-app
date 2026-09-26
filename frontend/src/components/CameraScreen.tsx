@@ -72,6 +72,9 @@ export default function CameraScreen({ onNavigate }: Props) {
   const [recognizeSubject, setRecognizeSubject] = useState<Subject>('数学')
   const [recognizeProgress, setRecognizeProgress] = useState(0)
   const [recognizedData, setRecognizedData] = useState<{ title: string; knowledgePoint: string; textContent: string } | null>(null)
+  // P6(2026-09-26): 缓存最近一次裁剪图, 用于「换文本通道重试」
+  const [lastCroppedUrl, setLastCroppedUrl] = useState<string>('')
+  const [retrying, setRetrying] = useState(false)
   const [ocrSuccess, setOcrSuccess] = useState(false)
 
   // 手动编辑状态
@@ -228,6 +231,10 @@ export default function CameraScreen({ onNavigate }: Props) {
                : `第 ${i + 1} 题 识别失败:${r.message || '未知原因'}`
         ).join('\n\n'),
       })
+      // P6(2026-09-26): 缓存最近一张裁剪图,供「换文本通道重试」使用
+      // 取最后一张成功的(用户重试通常是想看最后那张)
+      const lastOk = [...results].reverse().find((r) => r.ok && r.croppedUrl)
+      if (lastOk) setLastCroppedUrl(lastOk.croppedUrl)
       setOcrSuccess(successCount === results.length)
       setTimeout(() => setCameraPhase('batchResult'), 300)
     } catch (err) {
@@ -253,6 +260,31 @@ export default function CameraScreen({ onNavigate }: Props) {
     setSplitGroupId('')
     setCameraMode('拍题')
     setCameraPhase('viewfinder')
+  }
+
+  // P6(2026-09-26): 换纯文本通道重试最近一次裁剪图
+  // 用于视觉模型在代数最小值等高频套路题上脑补常见模式时,
+  // 用户主动跳过 visionFallback,走 TextIn OCR + LLM 文本合并
+  const handleRetryTextPath = async () => {
+    if (!lastCroppedUrl || retrying) return
+    setRetrying(true)
+    try {
+      const r = await api.recognizeQuestion({
+        imageBase64: lastCroppedUrl,
+        subject: recognizeSubject,
+        forceTextPath: true,
+      })
+      // 更新明细(只展示重试结果,作为对照参考)
+      setRecognizedData((prev) => prev ? {
+        ...prev,
+        textContent: prev.textContent + '\n\n--- 文本通道重试 ---\n' + (r.textContent || '(空)'),
+      } : prev)
+    } catch (e: any) {
+      console.error('[OCR] 文本通道重试失败:', e)
+      alert('重试失败:' + (e.message || '未知原因'))
+    } finally {
+      setRetrying(false)
+    }
   }
   const enterSplitTab = () => {
     setCameraMode('跨页')
@@ -508,6 +540,24 @@ export default function CameraScreen({ onNavigate }: Props) {
                 className="text-xs text-slate-600 font-bold leading-relaxed"
               />
             </div>
+
+            {/* P6(2026-09-26): 视觉塌缩时换文本通道重试按钮 */}
+            {lastCroppedUrl && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-extrabold text-amber-700">识别结果不对？</p>
+                  <p className="text-[10px] text-amber-600 mt-0.5">换纯文本通道重试最近一张（跳过视觉兜底）</p>
+                </div>
+                <button
+                  onClick={handleRetryTextPath}
+                  disabled={retrying}
+                  className="text-xs font-extrabold text-white px-3 py-2 rounded-xl disabled:opacity-50"
+                  style={{ background: '#F59E0B' }}
+                >
+                  {retrying ? '重试中…' : '换通道重试'}
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="bg-white px-4 pt-3 pb-10 flex gap-3 border-t border-slate-100">

@@ -13,7 +13,18 @@ describe('normalizeLatex — unicode 数学符号 → LaTeX', () => {
 
   it('根号 √ 后接数字/字母 → \\sqrt{}', () => {
     expect(normalizeLatex('√2')).toBe('\\sqrt{2}')
-    expect(normalizeLatex('√ab')).toBe('\\sqrt{ab}')
+    // 单字符裸字母 radicand 才补 {}(2026-09-26: 修复贪婪匹配崩坏)
+    expect(normalizeLatex('√e')).toBe('\\sqrt{e}')
+  })
+
+  it('根号 √ 后接多字符 radicand 不强行包裹(避免毁掉 \\sqrt{x^2+4})', () => {
+    // 关键回归: 旧规则 \\sqrt([a-zA-Z0-9]+) 会贪婪吃 "x" 然后留 "^2+4}" 漂在外面
+    // 修复后: 多 token radicand(含运算符/花括号)不补 {}
+    expect(normalizeLatex('√(x^2+4)')).toBe('\\sqrt(x^{2}+4)')
+    expect(normalizeLatex('√{x^2+4}')).toBe('\\sqrt{x^{2}+4}')
+    // 紧跟运算符的非字母字符(如 +)的 radicand,留原样
+    expect(normalizeLatex('\\sqrt x')).toBe('\\sqrt{x}')
+    expect(normalizeLatex('\\sqrt 2')).toBe('\\sqrt{2}')
   })
 
   it('上下标 ^2/^3 → {^2}', () => {

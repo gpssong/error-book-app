@@ -75,7 +75,7 @@ export function normalizeLatex(text) {
     [/±/g, '\\pm '],
 
     // 根号 / 上下标
-    [/√(?=[0-9a-zA-Z{])/g, '\\sqrt'], // √ 后面是数字/字母 → 接 {} 留给后续修复
+    [/√(?=[0-9a-zA-Z{(])/g, '\\sqrt'], // √ 后面是数字/字母/{/( → 接 {} 或 () 留给后续修复
     [/\^2/g, '^{2}'],
     [/\^3/g, '^{3}'],
 
@@ -121,13 +121,13 @@ export function normalizeLatex(text) {
     s = s.replace(re, repl)
   }
 
-  // ─── Step 2: \sqrt 后接非 { 字符 → 加 {} 包裹 ──────────────────────
-  // 例: \sqrt 2  →  \sqrt{2}
-  //     \sqrt e  →  \sqrt{e}
-  //     \sqrt{x → 已是合法,不动
-  // 也兼容:\sqrt 后跟空格再接数字/字母
-  s = s.replace(/\\sqrt(\s*)(?={)(?!})/g, '\\sqrt')   // no-op 安全
-  s = s.replace(/\\sqrt(\s*)([a-zA-Z0-9]+)/g, (_m, sp, arg) => `\\sqrt{${arg}}`)
+  // ─── Step 2: \sqrt 后接非 { 字符 → 单字符裸 radicand 才补 {} ────
+  // 例: \sqrt 2  →  \sqrt{2}              ← 单数字,补
+  //     \sqrt e  →  \sqrt{e}              ← 单字母,补
+  //     \sqrt{x^2+4} 不动(已有花括号或含运算符,LaTeX 编译器自有处理)
+  // 关键修复(2026-09-26):**不能贪婪匹配多字符 radicand**,否则 \sqrt{x^2+4}
+  // 会变成 \sqrt{x}^{2}+4}(被截断后 ^2+4} 漂在外面),把对的也毁成错的
+  s = s.replace(/\\sqrt(\s*)([a-zA-Z0-9])(?![a-zA-Z0-9^{])/g, '\\sqrt{$2}')
   s = s.replace(/\\sqrt\{\s+([a-zA-Z0-9]+)\s+\}/g, '\\sqrt{$1}')
 
   // ─── Step 3: 修复反斜杠转义错误的 LaTeX 命令 ──────────────────────

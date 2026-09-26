@@ -56,3 +56,68 @@ export function trimToFirstQuestion(text) {
 
   return lines.slice(startIdx, endIdx).join('\n').trim()
 }
+
+/**
+ * 公式内容 sanity 校验(2026-09-26)。
+ *
+ * 背景:TextIn 公式识别 + Agnes 视觉兜底在「代数最小值」「代数最值」等高频套路题上,
+ * 视觉模型经常把 √(x²+4)+4/√(x²+4) / m²+2/√(n(m²−n)) 脑补成常见模式
+ * (a+1/a+C / t+1/t+4)或直接猜一个「答案=4 的样子」。
+ * 这种幻觉会通过 latexNormalize 的「包装」变成「看起来对的 LaTeX」,前端 KaTeX 不报错,
+ * 学科检测器也无感(只看文字不看图)。
+ *
+ * 校验维度:
+ *  1) 选项数 < 4          → 题面残缺,不可信
+ *  2) 独立符号种类 < 3    → 4 个选项都用了同一组变量,疑似模板化
+ *  3) 4 个选项形状高度相似(去变量后 hash,独立数 ≤ 2) → LLM 套了相似公式
+ *  4) 完全没有 LaTeX 结构(无 \sqrt / \frac / ^{...}) → 模型把根号/分式都丢了
+ *
+ * 通过 → { ok: true }
+ * 不通过 → { ok: false, reason: '...', metric: ... },上游应降级重读
+ */
+export function formulaSanityCheck(textContent) {
+  const s = String(textContent || '').trim()
+  if (!s) return { ok: false, reason: 'empty', metric: 0 }
+
+  // 1) 选项行
+  const optionLines = s
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => /^[A-D][\.\.．、\s]/.test(l))
+  if (optionLines.length < 4) {
+    return { ok: false, reason: 'options<4', metric: optionLines.length }
+  }
+
+  // 2) 独立符号种类(字母/希腊字母,排除 A-D 选项前缀)
+  const symbols = new Set()
+  for (const opt of optionLines) {
+    // 先去掉选项前缀 [A. / [B、 / [C． / [D空格], 再统计字母
+    const stripped = opt.replace(/^[A-D][\.\.．、\s]+/, '')
+    const ms = stripped.match(/[a-zA-Zα-ωΑ-Ω]+/g) || []
+    for (const m of ms) symbols.add(m)
+  }
+  if (symbols.size < 3) {
+    return { ok: false, reason: 'symbols<3(疑似模板化)', metric: symbols.size }
+  }
+
+  // 3) 形状 hash(去变量/数字/空白)→ 独立数
+  const shapes = optionLines.map((o) =>
+    o
+      .replace(/[a-zA-Zα-ωΑ-Ω0-9]+/g, 'X')
+      .replace(/\\sqrt/g, 'SQ')
+      .replace(/\\frac|\\dfrac/g, 'FR')
+      .replace(/\s+/g, ''),
+  )
+  const uniq = new Set(shapes).size
+  if (uniq <= 2) {
+    return { ok: false, reason: 'options-toosimilar(模板化)', metric: uniq }
+  }
+
+  // 4) 完全没有 LaTeX 结构 → 模型把根号/分式/上下标都丢了
+  const hasLatexStructure = /\\sqrt|\\frac|\\dfrac|\^\{|_\{|\\\\?[a-zA-Z]+/.test(s)
+  if (!hasLatexStructure) {
+    return { ok: false, reason: 'no-latex-structure', metric: 0 }
+  }
+
+  return { ok: true }
+}

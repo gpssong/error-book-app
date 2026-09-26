@@ -16,10 +16,10 @@ import { Router } from 'express'
 import dotenv from 'dotenv'
 dotenv.config()
 
-import { isTextInConfigured, eraseHandwriting, recognizeText } from '../services/textin.js'
+import { isTextInConfigured, eraseHandwriting, recognizeText, recognizeFormula } from '../services/textin.js'
 import { semanticParseText, visionFallback, detectSubjectByLLM } from '../services/minimax.js'
 import { normalizeLatex } from '../utils/latexNormalize.js'
-import { extractTitleAndKP, trimToFirstQuestion } from '../pipeline/textExtract.js'
+import { extractTitleAndKP, trimToFirstQuestion, formulaSanityCheck } from '../pipeline/textExtract.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { checkDailyLimit } from '../middleware/paywall.js'
 
@@ -42,7 +42,7 @@ router.get('/status', (_req, res) => {
 // 需要登录 + 付费额度检查
 router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req, res) => {
   try {
-    const { imageBase64, subject = '数学', cleanHandwriting = false } = req.body || {}
+    const { imageBase64, subject = '数学', cleanHandwriting = false, forceTextPath = false } = req.body || {}
 
     if (!imageBase64) {
       return res.status(400).json({ error: '需要 imageBase64 参数' })
@@ -53,13 +53,20 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
       return res.status(400).json({ error: '图片数据无效或过小' })
     }
 
+    // P5(2026-09-26): 前端 config.html 配的 TextIn Key 通过 X-TextIn-App-Id / X-TextIn-Secret-Code 透传
+    // 之前后端从 .env 读,前端传的 header 永远被丢弃 → 用户在 config.html 配 key 是死开关
+    const textinOpts = {
+      appId: req.headers['x-textin-app-id'],
+      secretCode: req.headers['x-textin-secret-code'],
+    }
+
     const imageBuffer = Buffer.from(cleanBase64, 'base64')
     const imageSizeKB = imageBuffer.length / 1024
     console.log(`[OCR] 收到图片,大小: ${imageSizeKB.toFixed(1)} KB, 学科: ${subject}, 去手写: ${cleanHandwriting}`)
 
-    if (!isTextInConfigured()) {
+    if (!isTextInConfigured(textinOpts)) {
       return res.status(500).json({
-        error: '后端未配置 TextIn 凭证,无法启用专业 OCR。请在 backend/.env 配置 TEXTIN_APP_ID/TEXTIN_SECRET_CODE',
+        error: '后端未配置 TextIn 凭证,无法启用专业 OCR。请在 backend/.env 配置 TEXTIN_APP_ID/TEXTIN_SECRET_CODE,或在 config.html 添加 OCR Key',
       })
     }
 
@@ -68,7 +75,7 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
     let handwritingErased = false
     if (cleanHandwriting) {
       try {
-        workingBuffer = await eraseHandwriting(imageBuffer, { crop: 1, doc_direction: 4 })
+        workingBuffer = await eraseHandwriting(imageBuffer, { crop: 1, doc_direction: 4, ...textinOpts })
         handwritingErased = true
         console.log(`[OCR] 手写擦除完成: ${workingBuffer.length} bytes`)
       } catch (err) {
@@ -77,9 +84,13 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
       }
     }
 
-    // ─── ② 文字识别（公式已包含在 type=formula 的 lines 里,无需额外调用） ────
-    const [textResult] = await Promise.allSettled([
-      recognizeText(workingBuffer, { recognize_graphics: 1 }),
+    // ─── ② 文字识别 + 专业公式识别(并行,2026-09-26) ────────────
+    // 之前只用 recognizeText(通用 OCR + recognize_graphics=1),公式部分经常不稳;
+    // 现在并行调 recognizeFormula(/v2/recognize/formula, 专门做数学公式 → LaTeX),
+    // 把权威公式 LaTeX 喂给后续的 visionFallback 作为锚点,防止视觉模型脑补常见套路
+    const [textResult, formulaResult] = await Promise.allSettled([
+      recognizeText(workingBuffer, { recognize_graphics: 1, ...textinOpts }),
+      recognizeFormula(workingBuffer, { mode: 'formula_and_text', ...textinOpts }),
     ])
 
     const textLines = textResult.status === 'fulfilled' ? textResult.value.lines : []
@@ -93,48 +104,107 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
     const textOnlyLines = textLines.filter((l) => l.type !== 'formula' && l.text)
 
     const ocrText = textLines.map((l) => l.text).filter(Boolean).join('\n')
-    const formulaLatex = formulaLines.map((l) => l.text)
+    // 权威公式 LaTeX: 优先用专业公式端点的结果;若失败回退到通用 OCR 公式行
+    const formulaLatex =
+      formulaResult.status === 'fulfilled' && formulaResult.value.formulas.length > 0
+        ? formulaResult.value.formulas.map((f) => f.latex).filter(Boolean)
+        : formulaLines.map((l) => l.text)
+    if (formulaResult.status === 'rejected') {
+      console.warn('[OCR] 专业公式识别失败,回退到通用 OCR 公式行:', formulaResult.reason?.message)
+    }
 
-    console.log(`[OCR] 文字行数: ${textOnlyLines.length}, 公式行: ${formulaLines.length}`)
+    console.log(`[OCR] 文字行数: ${textOnlyLines.length}, 公式行: ${formulaLines.length}, 权威LaTeX: ${formulaLatex.length}`)
+
+    // ─── P6(2026-09-26): 「重试识别」按钮强制走纯文本路径 ─────────
+    // 视觉模型在代数最小值等高频套路题上会脑补常见模式(a+1/a+C),
+    // 用户在前端识别完成页点「换纯文本通道重试」时跳过 visionFallback,
+    // 走 TextIn OCR + LLM 文本合并作为对照
+    if (forceTextPath) {
+      console.log(`[OCR] forceTextPath=true,跳过视觉兜底,纯文本路径`)
+    }
 
     // ─── ③ 数学题走视觉兜底,纯文字走 LLM(2026-09-05 调整) ─────────
     // 关键洞察:LLM 文本合并看不到原图,会"脑补"内容(如把 √(ab) 错读成 6)
     // 数学题必须用 vision 模型直接看图,避免 LLM 瞎补
     const hasFormula = formulaLines.length >= 1 || formulaLatex.length >= 1
-    if (hasFormula) {
+    if (hasFormula && !forceTextPath) {
       console.log(`[OCR] 检测到 ${formulaLines.length} 条公式,数学题走视觉兜底`)
       try {
-        const visionParsed = await visionFallback({ imageBase64, subject })
+        const visionParsed = await visionFallback({ imageBase64, subject, formulaLatex })
         if (visionParsed && visionParsed.textContent) {
           console.log(`[OCR] 视觉兜底成功: title="${visionParsed.title}"`)
-          // LLM 按知识点判断学科(基于 AI 解析出的 title/knowledgePoint/textContent)
-          const llmSubject = await detectSubjectByLLM({
-            title: visionParsed.title,
-            knowledgePoint: visionParsed.knowledgePoint,
-            textContent: visionParsed.textContent,
-            fallback: subject,
-          })
-          if (llmSubject !== subject) {
-            console.log(`[OCR] LLM 学科分类: 用户=${subject} → 检测=${llmSubject}`)
+          // ─── 公式 sanity 校验(2026-09-26): 拦视觉模型「模板化幻觉」──────
+          // 例如 [B] √(x²+4)+4/√(x²+4) 被压成 "a+1/a+4" 这种脑补常见套路
+          const sanity = formulaSanityCheck(visionParsed.textContent)
+          if (!sanity.ok) {
+            console.warn(`[OCR] 视觉结果不通过 sanity: reason=${sanity.reason} metric=${sanity.metric},降级纯文本路径`)
+            // 走 fallthrough 到 semanticParseText(LLM 文本合并),失败再视觉再读
+            // 重复读图通常给同一结果,这里改走文本路径作为对照
+            const textParsed = await semanticParseText({ ocrText, formulas: formulaLatex, subject })
+            if (textParsed && textParsed.title && textParsed.textContent) {
+              const textSanity = formulaSanityCheck(textParsed.textContent)
+              if (textSanity.ok || !sanity.ok) {
+                // 任一通过 → 用文本路径(更稳,因为 TextIn 公式 LaTeX 已校验过)
+                console.log(`[OCR] 文本路径兜底成功: title="${textParsed.title}" sanity=${textSanity.ok}`)
+                const llmSubject2 = await detectSubjectByLLM({
+                  title: textParsed.title,
+                  knowledgePoint: textParsed.knowledgePoint,
+                  textContent: textParsed.textContent,
+                  fallback: subject,
+                })
+                return res.json({
+                  title: textParsed.title,
+                  knowledgePoint: textParsed.knowledgePoint || '未知',
+                  textContent: textParsed.textContent,
+                  sourceText: textParsed.sourceText || '',
+                  figureRegion: textParsed.figureRegion || '',
+                  subject: llmSubject2,
+                  detectedSubject: llmSubject2,
+                  detail: {
+                    ocrSuccess: true,
+                    handwritingErased,
+                    textLineCount: textLines.length,
+                    formulaCount: formulaLatex.length,
+                    pipeline: 'textin+vision-rejected+text-fallback',
+                    aiProvider: textParsed._provider || 'unknown',
+                    subjectDetection: 'llm',
+                    visionRejected: sanity.reason,
+                  },
+                })
+              }
+            }
+            // 两条都不可信: 仍返回视觉结果(用户至少能看见一个结果),但 detail 标记
+            console.warn(`[OCR] 文本路径也无法修复 vision 幻觉,保留视觉结果`)
+          } else {
+            // LLM 按知识点判断学科(基于 AI 解析出的 title/knowledgePoint/textContent)
+            const llmSubject = await detectSubjectByLLM({
+              title: visionParsed.title,
+              knowledgePoint: visionParsed.knowledgePoint,
+              textContent: visionParsed.textContent,
+              fallback: subject,
+            })
+            if (llmSubject !== subject) {
+              console.log(`[OCR] LLM 学科分类: 用户=${subject} → 检测=${llmSubject}`)
+            }
+            return res.json({
+              title: visionParsed.title,
+              knowledgePoint: visionParsed.knowledgePoint || '未知',
+              textContent: visionParsed.textContent,
+              sourceText: visionParsed.sourceText || '',
+              figureRegion: visionParsed.figureRegion || '',
+              subject: llmSubject,
+              detectedSubject: llmSubject,
+              detail: {
+                ocrSuccess: true,
+                handwritingErased,
+                textLineCount: textLines.length,
+                formulaCount: formulaLatex.length,
+                pipeline: 'textin+vision-primary',
+                aiProvider: 'vision-primary',
+                subjectDetection: 'llm',
+              },
+            })
           }
-          return res.json({
-            title: visionParsed.title,
-            knowledgePoint: visionParsed.knowledgePoint || '未知',
-            textContent: visionParsed.textContent,
-            sourceText: visionParsed.sourceText || '',
-            figureRegion: visionParsed.figureRegion || '',
-            subject: llmSubject,
-            detectedSubject: llmSubject,
-            detail: {
-              ocrSuccess: true,
-              handwritingErased,
-              textLineCount: textLines.length,
-              formulaCount: formulaLatex.length,
-              pipeline: 'textin+vision-primary',
-              aiProvider: 'vision-primary',
-              subjectDetection: 'llm',
-            },
-          })
         }
       } catch (ve) {
         console.warn('[OCR] 视觉主路径失败,降级到 LLM 文本合并:', ve.message)
@@ -165,15 +235,17 @@ router.post('/', authMiddleware, checkDailyLimit({ action: 'ocr' }), async (req,
             console.log(`[OCR] LLM 学科分类: 用户=${subject} → 检测=${llmSubject}`)
           }
 
-          // ─── 低质量检测(2026-09-05):触发自动视觉兜底 ───────────────
-          // 触发条件:textContent 过短(<60字),或缺少 4 个选项
+          // ─── 低质量检测(2026-09-05 + 2026-09-26 扩):触发自动视觉兜底 ─────
+          // 触发条件:textContent 过短(<60字),或缺少 4 个选项,
+          // 或公式 sanity 不通过(模板化幻觉,如 4 选项都套 a+1/a+C)
           const text = parsed.textContent
           const optionCount = (text.match(/^[A-D][\.\.．、]/gm) || []).length
-          const isLowQuality = text.length < 60 || optionCount < 4
+          const sanity = formulaSanityCheck(text)
+          const isLowQuality = text.length < 60 || optionCount < 4 || !sanity.ok
           if (isLowQuality) {
-            console.warn(`[OCR] 检测到低质量输出(len=${text.length}, options=${optionCount}),启动视觉兜底`)
+            console.warn(`[OCR] 检测到低质量输出(len=${text.length}, options=${optionCount}, sanity=${sanity.ok ? 'ok' : sanity.reason}),启动视觉兜底`)
             try {
-              const visionParsed = await visionFallback({ imageBase64, subject })
+              const visionParsed = await visionFallback({ imageBase64, subject, formulaLatex })
               if (visionParsed && visionParsed.textContent) {
                 console.log(`[OCR] 视觉兜底成功,覆盖原结果: title="${visionParsed.title}"`)
                 const visionLlmSubject = await detectSubjectByLLM({

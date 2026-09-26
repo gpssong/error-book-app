@@ -343,16 +343,29 @@ async function callAnthropicAPI({ apiKey, baseUrl, model, textPrompt, systemProm
  *
  * 用于:TextIn 没识别出任何文字(复杂版面/手写严重)时。
  */
-export async function visionFallback({ imageBase64, subject = '数学' }) {
+export async function visionFallback({ imageBase64, subject = '数学', formulaLatex = [] }) {
+  // 公式权威 LaTeX(来自 TextIn /v2/recognize/formula)如有 → 必须在 prompt 中强调「照抄」
+  // 视觉模型在代数最小值等高频套路题上会脑补常见模式(a+1/a+C),把权威公式喂给它作为锚点
+  const formulaSection = formulaLatex.length
+    ? `\n# 权威公式 LaTeX(来自 TextIn,必须**照抄原样**进对应选项,不要"归一化"、不要替换变量、不要重新格式化)\n${formulaLatex.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
+    : ''
+
   const userPrompt = `
 # 学科
 ${subject}
-
+${formulaSection}
 请直接看图,提取**第一道完整题目**(含题号+题干+四个选项)。
 
 数学符号必须用标准 LaTeX:
 - \\cup / \\cap / \\in / \\geq / \\dfrac{a}{b} / \\sqrt{a} / +\\infty
 - 选项写成 "A. ...\\nB. ...\\nC. ...\\nD. ..."
+- 如有「权威公式 LaTeX」段,**按顺序**对应到 A/B/C/D 选项,直接照搬 LaTeX 字符串,**不要**改写、合并、替换或简化
+
+硬约束:
+- 不要因为"看像常见模式"就简化或合并(√(x²+4) + 4/√(x²+4) 不要写成 a + 1/a + C)
+- 不要用变量 a/b/x/t 等**替换原图中的变量**(x²+4 / m²−n 等)即使你"知道它可以替换"也要原样照抄
+- 输出4 个选项时,选项之间结构差异大是正常的(代数/几何/三角混合),不要为了"看着整齐"把它们统一格式
+- 如果某个选项确实无法辨认,输出"无法辨认"而不是猜一个常见模式
 
 如果题目里有一张关键示意图(几何立体图/物理装置/化学结构/折线图等),
 额外输出 figureRegion = 该图在整张图中归一化包围盒 {x,y,w,h} [0,1];
