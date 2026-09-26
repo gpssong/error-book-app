@@ -34,7 +34,7 @@ const router = Router()
 router.get('/status', (_req, res) => {
   res.json({
     textin: process.env.TEXTIN_APP_ID ? 'configured' : 'not_configured',
-    visionModel: process.env.VISION_MODEL || 'agnes-2.5-pro-alpha',
+    visionModel: process.env.VISION_MODEL || 'agnes-2.5-flash',
     minimax: process.env.MINIMAX_API_KEY ? 'configured' : 'not_configured',
   })
 })

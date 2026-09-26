@@ -13,6 +13,7 @@ import LatexPreview from '@/components/LatexPreview'
 import type { Subject } from '@/stores/api'
 import type { SimilarQuestion } from '@/stores/api'
 import { sliceSimilarQuestions, DEFAULT_SIMILAR_COUNT } from '@/utils/sliceSimilarQuestions'
+import { pickPrintFigure } from '@/utils/printFigureSrc'
 import api, { resolveImageUrl } from '@/stores/api'
 import { Capacitor } from '@capacitor/core'
 import { Printer } from '@dimer47/capacitor-plugin-printer'
@@ -40,6 +41,10 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
     refined: boolean
     reason?: string
   }>>({})
+  // v48.2: 各题懒加载的示意图 { [errId]: figureBase64 | null(空) }
+  // 列表接口剥离了 figureBase64(AppContext.errors 不含), 打印页对选中题逐个懒加载还原,
+  // 否则含图题(几何/物理)打印时永远 fallback 到 imageUrl(整张题照)。
+  const [figureMap, setFigureMap] = useState<Record<string, string | null>>({})
   // 输入框用字符串暂存, 避免 "01" 这类前导零被数字态吞掉; 提交时解析
   const [similarCountInput, setSimilarCountInput] = useState<string>(String(DEFAULT_SIMILAR_COUNT))
   // v30: 随机练习模式
@@ -55,6 +60,35 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
       : childErrors
 
   const questionCount = isPracticeMode ? practiceQuestions.length : printErrors.length
+
+  // v48.2: 懒加载打印题的示意图(列表不含 figureBase64, 按需拉取)
+  // 仅在错题模式 + 选中题集合变化时跑; 已有 figureMap 缓存的跳过
+  useEffect(() => {
+    if (isPracticeMode) return
+    let cancelled = false
+    const ids = printErrors.map((e) => e.id)
+    const missing = ids.filter((id) => !(id in figureMap))
+    if (missing.length === 0) return
+    ;(async () => {
+      for (const id of missing) {
+        if (cancelled) return
+        try {
+          const f = await api.getErrorFigure(id)
+          if (cancelled) return
+          setFigureMap((m) => {
+            const next = { ...m }
+            next[id] = f.figureBase64 || f.figureImageUrl || null
+            return next
+          })
+        } catch {
+          if (cancelled) return
+          setFigureMap((m) => ({ ...m, [id]: null }))
+        }
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPracticeMode, printErrors.map((e) => e.id).join(',')])
 
   // v19: 返回 ErrorList 时清空 pendingPrintIds,避免下次进来残留
   useEffect(() => {
@@ -367,79 +401,51 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
                            - 用户可点「图不全?点此优化」调后端 refine 重算 */}
                         {(() => {
                           const refined = refineMap[err.id]
-                          // v48: 本地 refine 成功 + 有 region → 用去手写图 + clip-path
-                          if (refined?.refined && refined.figureImageUrl && refined.region) {
-                            const r = refined.region
-                            // region {x,y,w,h} 归一化 → clip-path inset(top right bottom left) 用百分比
+                          const fig = pickPrintFigure(err, refined, figureMap[err.id] ?? undefined)
+                          if (fig.kind === 'none') return null
+                          // region → clip-path inset(仅 refined 成功 + 有 region)
+                          let clip: React.CSSProperties | undefined
+                          let figLabel = err.title
+                          if (fig.kind === 'refined' && fig.region) {
+                            const r = fig.region
                             const top = (r.y * 100).toFixed(2)
                             const left = (r.x * 100).toFixed(2)
                             const bottom = ((1 - r.y - r.h) * 100).toFixed(2)
                             const right = ((1 - r.x - r.w) * 100).toFixed(2)
-                            return (
-                              <div className="relative">
-                                <img
-                                  src={resolveImageUrl(refined.figureImageUrl)}
-                                  alt={`${err.title} 示意图(已优化)`}
-                                  className={`w-full object-cover rounded-md bg-white border border-slate-200 mb-2 print:mb-2 ${
-                                    printLayout === '2列'
-                                      ? 'max-h-[140px] print:max-h-[200px]'
-                                      : 'max-h-[200px] print:max-h-[280px]'
-                                  }`}
-                                  style={{ clipPath: `inset(${top}% ${right}% ${bottom}% ${left}%)` }}
-                                />
+                            clip = { clipPath: `inset(${top}% ${right}% ${bottom}% ${left}%)` }
+                            figLabel = `${err.title} 示意图(已优化)`
+                          }
+                          const isRefined = fig.kind === 'refined'
+                          const isPhoto = fig.kind === 'photo'
+                          return (
+                            <div className="relative">
+                              <img
+                                src={resolveImageUrl(fig.src)}
+                                alt={figLabel}
+                                className={isRefined
+                                  ? `w-full object-cover rounded-md bg-white border border-slate-200 mb-2 print:mb-2 ${
+                                      printLayout === '2列' ? 'max-h-[140px] print:max-h-[200px]' : 'max-h-[200px] print:max-h-[280px]'}`
+                                  : isPhoto
+                                    ? `w-full object-contain rounded-md bg-slate-50 border border-slate-100 mb-2 print:mb-2 ${
+                                        printLayout === '2列' ? 'max-h-[100px] print:max-h-[160px]' : 'max-h-[160px] print:max-h-[240px]'}`
+                                    : `w-full object-contain rounded-md bg-white border border-slate-200 mb-2 print:mb-2 ${
+                                        printLayout === '2列' ? 'max-h-[140px] print:max-h-[200px]' : 'max-h-[200px] print:max-h-[280px]'}`}
+                                style={clip}
+                              />
+                              {isRefined ? (
                                 <span className="absolute top-1 right-1 px-1.5 py-0.5 text-[8px] font-bold rounded bg-green-100 text-green-700">✓ 已去手写</span>
-                              </div>
-                            )
-                          }
-                          // 兜底 1: figureImageUrl / figureBase64(原书示意图,可能不全)
-                          if (err.figureImageUrl || err.figureBase64) {
-                            return (
-                              <div className="relative">
-                                <img
-                                  src={resolveImageUrl(err.figureImageUrl || err.figureBase64)}
-                                  alt={`${err.title} 示意图`}
-                                  className={`w-full object-contain rounded-md bg-white border border-slate-200 mb-2 print:mb-2 ${
-                                    printLayout === '2列'
-                                      ? 'max-h-[140px] print:max-h-[200px]'
-                                      : 'max-h-[200px] print:max-h-[280px]'
-                                  }`}
-                                />
+                              ) : (
                                 <button
                                   type="button"
                                   onClick={() => handleRefine(err.id)}
                                   disabled={refined?.loading}
                                   className="absolute top-1 right-1 px-1.5 py-0.5 text-[8px] font-bold rounded bg-amber-100 text-amber-700 hover:bg-amber-200 print:hidden disabled:opacity-50"
                                 >
-                                  {refined?.loading ? '优化中…' : '图不全?点此优化'}
+                                  {refined?.loading ? '优化中…' : isPhoto ? '提取示意图' : '图不全?点此优化'}
                                 </button>
-                              </div>
-                            )
-                          }
-                          // 兜底 2: imageUrl / imageBase64(整张题目照)
-                          if (err.imageUrl || err.imageBase64) {
-                            return (
-                              <div className="relative">
-                                <img
-                                  src={resolveImageUrl(err.imageUrl || err.imageBase64)}
-                                  alt={err.title}
-                                  className={`w-full object-contain rounded-md bg-slate-50 border border-slate-100 mb-2 print:mb-2 ${
-                                    printLayout === '2列'
-                                      ? 'max-h-[100px] print:max-h-[160px]'
-                                      : 'max-h-[160px] print:max-h-[240px]'
-                                  }`}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => handleRefine(err.id)}
-                                  disabled={refined?.loading}
-                                  className="absolute top-1 right-1 px-1.5 py-0.5 text-[8px] font-bold rounded bg-amber-100 text-amber-700 hover:bg-amber-200 print:hidden disabled:opacity-50"
-                                >
-                                  {refined?.loading ? '优化中…' : '提取示意图'}
-                                </button>
-                              </div>
-                            )
-                          }
-                          return null
+                              )}
+                            </div>
+                          )
                         })()}
                         {err.textContent ? (
                           <LatexPreview

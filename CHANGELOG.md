@@ -1,5 +1,53 @@
 # Changelog
 
+## v48.2 (2026-09-26) - 打印页「示意图」修三处:figureBase64 不再被列表剥离 + Agnes vision 切有余量模型 + 补集法加「文字包围中央图」启发式
+
+### 背景
+
+用户截图(2026-09-26):打印预览页对「昆虫爬立方体」立体几何题,显示的是**手指+红圈+手写的整张题目拍摄照**,而非题目里印的立方体示意图。排查出三个叠加根因:
+
+1. **列表接口剥离了 `figureBase64`(确定性 bug,影响所有已有题)**:
+   `AppContext.errors` 来自 `GET /api/errors`,后端 `errorQuestion.js` 列表端点做 `.select('-imageBase64 -figureBase64')` 剥离大 base64。打印页从列表拿到的 `err.figureBase64` 永远为空 → 三层 fallback 直接跳到 `imageUrl`(整张题照)。Mongo 里这条题其实**有 30KB 的 `figureBase64`**,只是打印页看不到。
+
+2. **补集法对「图夹在文字中间」的题结构性失效**:
+   `figureRegionFromTextPositions` 求「文字 bbox 的补集最大连通块」。立体几何图藏在题干+ABCD 选项**中间**,补集里行间缝隙连成贴边大块(≈0.6 整图),启发式抓不到「被文字四面包围的中央图」。
+
+3. **Agnes vision 模型配额耗尽(放大器)**:
+   NAS 日志 `agnes-2.5-pro-alpha [403] insufficient_user_quota`(remaining $0.0002,需 $0.000226)。实测 `agnes-2.5-flash` 和 `agnes-3.0-flash` **都能收图且有余量**,只有 vision 模型 pro-alpha 403 → 视觉兜底 + 新题 figureRegion 全失,拖垮 OCR 的 AI 文本合并/学科分类。
+
+### 改动
+
+| 类别 | 文件 | 内容 |
+|---|---|---|
+| **后端 P0: 取图端点** | `backend/src/routes/errorQuestion.js` | 新增 `GET /api/errors/:id/figure`:按需返回单条的 `figureBase64`/`figureImageUrl`(绕过列表投影),打印页对选中题逐个懒加载 |
+| **后端 P1: 启发式** | `backend/src/pipeline/textExtract.js` | `figureRegionFromTextPositions` 加「文字包围中央图」启发式:补集最大连通块**贴边**(行间缝隙)或 ratio 越界时,若文字从上下左右四带都有一定密度(≥8%),改用「中央候选框 [0.15,0.85]×[0.2,0.8] 内被包围的最大未 occupied 连通块」;新增辅助 `isFigureBoxedByText` / `findBoxedCenterRegion` |
+| **后端 P2: 视觉模型** | `backend/src/services/minimax.js` + `backend/src/routes/ocr.js` | `VISION_MODEL` 代码默认值 `agnes-2.5-pro-alpha` → `agnes-2.5-flash`(有余量、能收图);`.env.example` 记录该决策 |
+| **前端 P0: 懒加载** | `frontend/src/components/PrintPreviewScreen.tsx` | 新增 `figureMap` state + `useEffect` 懒加载:打印题集合变化时对每条调 `api.getErrorFigure(id)` 还原 `figureBase64`;示意图选取逻辑抽成 `pickPrintFigure` 纯函数 |
+| **前端 P1: 纯函数** | `frontend/src/utils/printFigureSrc.ts`(新增) | `pickPrintFigure(err, refined, figureMapValue)`:优先级 refined+region > figureImageUrl/figureBase64 > **figureMap 懒加载** > imageUrl/imageBase64 > none |
+| **前端 P2: 回归测试** | `frontend/src/utils/printFigureSrc.test.ts`(8 条) + `backend/src/pipeline/textExtract.test.js`(+2 条) | 锁定 v48.2「figureMap 懒加载还原图、不再 fallback 整张照」+ 启发式「中央被包围块」命中 / 纯文字题不误触发 |
+
+### 设计决策
+
+- **按需端点而非放宽列表投影**:列表 JSON 不能重新膨胀(错题多时数 MB),`figureBase64` 只在打印页**逐题懒加载**还原,单条 30KB 可控
+- **启发式是 fallback 兜底,宁宽勿漏**:只在补集最大块**贴边**(行间缝隙信号)或越界时启用,四带都需 ≥8% 文字密度,纯文字题(高密度)和单边空白题不会误触发
+- **视觉模型切 agnes-2.5-flash 而非 pro-alpha**:pro-alpha 配额耗尽,flash 实测能收图且有余额;若后续给 pro-alpha 充值,把 `.env` 的 `VISION_MODEL` 改回即可(识别更强但更贵)
+- **NAS `error-book.env` 的 `VISION_MODEL=agnes-2.5-pro-alpha` 需同步改成 `agnes-2.5-flash`**:env 优先级高于代码默认值,只改代码不生效
+
+### 验证
+
+- 后端 `pnpm test` **64/64**(原 62 + 新 2 启发式)
+- 后端 `pnpm lint` 0 error
+- 前端 `pnpm typecheck` ✓ / `pnpm build` ✓(chunk `index-CcMbZOaI.js` 613.91kB)
+- 前端 `pnpm test` **27/27**(原 19 + 新 8 pickPrintFigure)
+- 实测算法:立方体布局输入 → 返回中央块 `{x:0.14,y:0.23,w:0.71,h:0.47}`(贴边补集法本会返回整图 0,0,0.99,0.99)
+
+### 已知限制 / 后续
+
+- **存量题 figureBase64 仍可能为空**:v47 前拍的题没跑过 figureRegion,启发式只对**新拍的**几何题生效;老题可点打印页「提取示意图」(refine-figure)补
+- **启发式是几何先验,非万能**:对图偏一侧(非中央)的题可能仍漏,视觉模型(切 agnes-2.5-flash 后)是主出图来源
+
+---
+
 ## v48.1-hotfix (2026-09-26) - 错题历史页「反复加载/闪烁」:loadPage ref-guard
 
 ### 背景

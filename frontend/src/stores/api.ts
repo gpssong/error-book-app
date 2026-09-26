@@ -271,6 +271,11 @@ const api = {
       bboxCount?: number
     }>(`/errors/${id}/refine-figure`, { method: 'POST' }),
 
+  // v48.2: 按需取单条示意图(列表接口剥离了 figureBase64, 打印页靠本方法懒加载还原)
+  // 出参: { figureImageUrl, figureBase64 }(figureBase64 可能是 30KB+ 的 base64)
+  getErrorFigure: (id: string) =>
+    request<{ figureImageUrl: string; figureBase64: string }>(`/errors/${id}/figure`),
+
   // ─── AI 服务 ────────────────────────────────────────────────────────────────
   analyzeError: (data: { title: string; knowledgePoint: string; subject: string; textContent?: string; sourceText?: string; childId?: string; figureBase64?: string }) =>
     request<AIAnalysisResult>('/ai/analyze', { method: 'POST', body: JSON.stringify(data) }),

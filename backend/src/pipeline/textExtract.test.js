@@ -230,4 +230,39 @@ describe('figureRegionFromTextPositions — v47 后端 fallback', () => {
     expect(r.x + r.w).toBeLessThanOrEqual(1.001)
     expect(r.y + r.h).toBeLessThanOrEqual(1.001)
   })
+
+  // ─── v48.2 P1:「文字包围中央图」启发式 ───────────────────────────────
+  it('四边都有文字 + 中央空白(立方体线框图布局) → 命中中央作为 figureRegion', () => {
+    // 模拟「昆虫爬立方体」真实布局:题干多行在上、选项 ABCD 在下、左右少量题目文字
+    // 中央大块空白 = 立方体线框图(被文字四面包围)
+    // 纯补集法会选到「行间缝隙」贴边块 → 启发式改用「中央被包围的最大未 occupied 块」
+    const positions = [
+      toPoly(0.05, 0.08, 0.90, 0.04),  // 题干 1
+      toPoly(0.05, 0.14, 0.90, 0.04),  // 题干 2
+      toPoly(0.05, 0.20, 0.90, 0.04),  // 题干 3
+      toPoly(0.05, 0.30, 0.12, 0.04),  // 左带(题目文字)
+      toPoly(0.83, 0.30, 0.12, 0.04),  // 右带(题目文字)
+      toPoly(0.05, 0.70, 0.90, 0.05),  // 选项 A
+      toPoly(0.05, 0.78, 0.90, 0.05),  // 选项 B
+      toPoly(0.05, 0.86, 0.90, 0.05),  // 选项 C
+      toPoly(0.05, 0.94, 0.90, 0.04),  // 选项 D
+    ]
+    const r = figureRegionFromTextPositions(positions)
+    expect(r).not.toBe(null)
+    // 中央区域: x ≈ 0.14~0.85, y ≈ 0.23~0.70(图所在)
+    expect(r.x).toBeGreaterThanOrEqual(0.10)
+    expect(r.x + r.w).toBeLessThanOrEqual(0.86)
+    expect(r.y).toBeGreaterThanOrEqual(0.18)
+    expect(r.y + r.h).toBeLessThanOrEqual(0.72)
+  })
+
+  it('纯文字题(文字填满,四边都密) → 仍返回 null(启发式不该误触发)', () => {
+    // 整图高密度文字,没有任何中央空白 → 不该启发式出图
+    const positions = []
+    for (let i = 0; i < 20; i++) {
+      positions.push(toPoly(0.05, (i / 20) * 0.95, 0.9, 0.045))
+    }
+    expect(figureRegionFromTextPositions(positions)).toBe(null)
+  })
 })
+

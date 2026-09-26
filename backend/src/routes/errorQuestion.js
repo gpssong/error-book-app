@@ -122,6 +122,29 @@ router.get('/:id/image', async (req, res) => {
   }
 })
 
+// ─── 取示意图(v48.2):按需返回 figureBase64/figureImageUrl ────────────────────
+// 背景: 列表接口 GET /errors 做 .select('-imageBase64 -figureBase64') 剥离大 base64,
+// 导致打印页(AppContext.errors 来自列表)永远拿不到 figureBase64 → 含图题打印时
+// fallback 到 imageUrl(整张题照)而非 figureBase64(原书示意图)。
+// 本端点按需返回单条的示意图(可能 30KB+ 的 base64),打印页对选中题逐个懒加载。
+router.get('/:id/figure', async (req, res) => {
+  try {
+    if (isMemoryDB()) {
+      const err = getErrorOf(req.userId, req.params.id)
+      if (!err) return res.status(404).json({ error: '错题不存在' })
+      return res.json({ figureImageUrl: err.figureImageUrl || '', figureBase64: err.figureBase64 || '' })
+    }
+    const err = await ErrorQuestion.findById(req.params.id)
+    if (!err) return res.status(404).json({ error: '错题不存在' })
+    const child = await Child.findOne({ _id: err.childId, ownerId: req.userId })
+    if (!child) return res.status(403).json({ error: '无权访问' })
+    return res.json({ figureImageUrl: err.figureImageUrl || '', figureBase64: err.figureBase64 || '' })
+  } catch (err) {
+    console.error('[figure] 异常:', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ─── 获取单个错题 ─────────────────────────────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {

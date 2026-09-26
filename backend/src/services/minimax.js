@@ -21,7 +21,7 @@ const MINIMAX_MODEL = process.env.MINIMAX_MODEL || 'MiniMax-M3'
 
 const AGNES_KEY = process.env.AI_API_KEY || ''
 const AGNES_BASE = process.env.AI_API_BASE || 'https://apihub.agnes-ai.com/v1'
-const AGNES_VISION = process.env.VISION_MODEL || 'agnes-2.5-pro-alpha'
+const AGNES_VISION = process.env.VISION_MODEL || 'agnes-2.5-flash'
 
 const SYSTEM_PROMPT = `你是一位资深中学教师,擅长从 OCR 碎片化结果中还原题目原貌。
 

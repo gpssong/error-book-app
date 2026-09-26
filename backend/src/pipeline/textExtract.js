@@ -292,6 +292,33 @@ export function figureRegionFromTextPositions(
   if (typeof process !== 'undefined' && process.env?.DEBUG_FIGURE_REGION) {
     console.log(`[figureRegionFromTextPositions] regions=${regionCount} bestSize=${bestSize}/${totalGrid} ratio=${ratio.toFixed(3)} textDensity=${textDensity.toFixed(3)} merged=${merged.length}`)
   }
+
+  // ─── v48.2 P1:「文字包围中央图」启发式 ────────────────────────────────────
+  // 几何立体/3D 线框图(立方体 ABCD-EFGH)的特征:图在**中央**,题干在上、选项在下,
+  // 文字把图四面包围。但线框图内部有大量空白,这些空白和「文字行间缝隙」连成一片,
+  // 上面「最大连通补集」常选到一个**贴边的巨大空白块**(ratio≈0.6, 其实是行间缝隙),
+  // 或者四带都被占走 → 补集法结构性失效。
+  //
+  // 启发式(在补集结果不靠谱时启用):
+  //   - 若最大连通块贴边(贴 4 边任意一边,说明是「行间缝隙/整图留白」而非中央图),
+  //     或 ratio 不在合理区(<0.15 太密 / >0.92 太空),
+  //   - 且文字确实从上下左右四面包围了中央(见 isFigureBoxedByText),
+  //   则改用「中央被包围的最大未 occupied 连通块」作为 figureRegion。
+  //
+  // 中央候选框:整图水平 [0.15,0.85]、垂直 [0.2,0.8]。线框图典型落在中央。
+  const bestTouchesBorder =
+    bestRegion && (bestRegion.minX <= 1 || bestRegion.minY <= 1 ||
+                  bestRegion.maxX >= GRID - 2 || bestRegion.maxY >= GRID - 2)
+  const complementUnreliable = ratio < 0.15 || ratio > 0.92 || bestTouchesBorder
+  if (complementUnreliable && isFigureBoxedByText(occupied, GRID, totalGrid)) {
+    const center = findBoxedCenterRegion(occupied, GRID)
+    if (center) {
+      if (typeof process !== 'undefined' && process.env?.DEBUG_FIGURE_REGION) {
+        console.log(`[figureRegionFromTextPositions] boxed-center heuristic → ${JSON.stringify(center)}`)
+      }
+      return center
+    }
+  }
   if (ratio < 0.15 || ratio > 0.92) return null
 
   // 网格坐标 → 归一化坐标(扩 1 个格子边界,避免裁剪太紧)
@@ -299,6 +326,99 @@ export function figureRegionFromTextPositions(
   const y = Math.max(0, (bestRegion.minY - 1) / GRID)
   const x2 = Math.min(1, (bestRegion.maxX + 1) / GRID)
   const y2 = Math.min(1, (bestRegion.maxY + 1) / GRID)
+  return {
+    x: round4(x),
+    y: round4(y),
+    w: round4(x2 - x),
+    h: round4(y2 - y),
+  }
+}
+
+// ─── v48.2 P1:「文字包围中心」启发式辅助函数 ──────────────────────────────────
+//
+// 判断图是否被文字四面包围:在归一化网格上,看候选中央区域
+// (整图水平方向 [0.2,0.8]、垂直方向 [0.15,0.85] 的矩形)
+// 是否在上下左右四个方向都能碰到文字(occupied)。
+//
+// 实现:把整图分成「中央候选框」外环,统计外环里文字占的四个方向条带:
+//  - 上带: y ∈ [0.1, 0.25)
+//  - 下带: y ∈ (0.75, 0.9]
+//  - 左带: x ∈ [0.0, 0.15), y ∈ [0.25, 0.75)
+//  - 右带: x ∈ (0.85, 1.0], y ∈ [0.25, 0.75)
+// 四个带里都有一定比例(≥ 8%)的格子被文字占据 → 认定图被四面包围。
+//
+// 这种几何先验只在「文字确实从四个方向围着中央」时触发,
+// 对纯文字题(全是文字,无中央图)和单边空白题(只有上方文字)不会误触发。
+function isFigureBoxedByText(occupied, grid, total) {
+  const band = (x0, y0, x1, y1) => {
+    let total = 0, occ = 0
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        total++
+        if (occupied[y * grid + x]) occ++
+      }
+    }
+    return total ? occ / total : 0
+  }
+  const G = grid
+  // 归一化 [0.1,0.25] → 网格坐标
+  const top = band(Math.floor(0.0 * G), Math.floor(0.10 * G), Math.ceil(1.0 * G), Math.floor(0.25 * G))
+  const bottom = band(Math.floor(0.0 * G), Math.floor(0.75 * G), Math.ceil(1.0 * G), Math.ceil(0.90 * G))
+  const left = band(Math.floor(0.0 * G), Math.floor(0.25 * G), Math.floor(0.15 * G), Math.ceil(0.75 * G))
+  const right = band(Math.floor(0.85 * G), Math.floor(0.25 * G), Math.ceil(1.0 * G), Math.ceil(0.75 * G))
+  const need = 0.08
+  // 四带都需达到 8% 文字密度才算「被包围」
+  return top >= need && bottom >= need && left >= need && right >= need && total > 0
+}
+
+// 找到「被文字包围」的中央区域(归一化 {x,y,w,h}):
+// 在中央候选框 [0.15,0.85]×[0.25,0.75] 里找最大未 occupied 连通块。
+// 该连通块 = 文字四面包围的中央空白 = 线框图所在。
+function findBoxedCenterRegion(occupied, grid) {
+  const G = grid
+  const x0 = Math.floor(0.15 * G)
+  const x1 = Math.ceil(0.85 * G)
+  const y0 = Math.floor(0.20 * G)
+  const y1 = Math.ceil(0.80 * G)
+  const visited = new Uint8Array(G * G)
+  let best = null
+  let bestCount = 0
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const idx = y * G + x
+      if (occupied[idx] || visited[idx]) continue
+      const queue = [[x, y]]
+      visited[idx] = 1
+      let minX = x, maxX = x, minY = y, maxY = y, count = 0
+      while (queue.length) {
+        const [cx, cy] = queue.shift()
+        count++
+        if (cx < minX) minX = cx
+        if (cx > maxX) maxX = cx
+        if (cy < minY) minY = cy
+        if (cy > maxY) maxY = cy
+        for (const [nx, ny] of [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]]) {
+          if (nx < x0 || nx >= x1 || ny < y0 || ny >= y1) continue
+          const nIdx = ny * G + nx
+          if (occupied[nIdx] || visited[nIdx]) continue
+          visited[nIdx] = 1
+          queue.push([nx, ny])
+        }
+      }
+      // 中央连通块至少要占候选框的 15%(避免把选项间的小缝隙当成图)
+      const candidateArea = (x1 - x0) * (y1 - y0)
+      if (count / candidateArea < 0.15) continue
+      if (count > bestCount) {
+        bestCount = count
+        best = { minX, maxX, minY, maxY }
+      }
+    }
+  }
+  if (!best) return null
+  const x = Math.max(0, (best.minX - 1) / G)
+  const y = Math.max(0, (best.minY - 1) / G)
+  const x2 = Math.min(1, (best.maxX + 1) / G)
+  const y2 = Math.min(1, (best.maxY + 1) / G)
   return {
     x: round4(x),
     y: round4(y),
