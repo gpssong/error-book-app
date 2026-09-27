@@ -1,5 +1,28 @@
 # Changelog
 
+## v48.5 (2026-09-27) - 错题历史页:切换 child/subject 不闪空 + 锁定 v48.4 打印图修复
+
+### 背景
+
+用户截图(2026-09-27):「错题历史」页**不停闪「加载中…」**。排查:
+
+- 后端分页接口正常(`paged=1` → `{items:30,hasMore:true,total:62}`)。
+- `ErrorListScreen` 已有 ref-guard(v48.1-hotfix),`loadPage` deps `[activeChildId, filterSubject]` 稳定。
+- 残留体验问题:切换 child/subject 时 `useEffect` 调 `setPageItems([])` 闪空,加上 StrictMode 双挂载 + `activeChildId` 由 `refreshChildren` 异步 `SET_ACTIVE_CHILD` 的时序,期间页面反复闪「加载中…」(妞妞 childId=0 题 + 天天 childId=62 题切换时尤明显)。
+
+### 改动
+
+| 文件 | 内容 |
+|---|---|
+| `frontend/src/components/ErrorListScreen.tsx` | 去掉 `useEffect` 里的 `setPageItems([])`,切换 child/subject 保留上一页数据直到新数据拉到 → 不闪空。ref-guard 防重入,无死循环。 |
+
+### 部署
+
+- 飞牛 NAS v48.5 dist (chunk `index-CFsCF_3N.js`)
+- APK: `error-book-v48.5-errorlist-loop.apk`
+
+---
+
 ## v48.4 (2026-09-27) - 打印页示意图:lazyFigure 携带 region + 裁剪盒按 region 宽高比出高
 
 ### 背景
