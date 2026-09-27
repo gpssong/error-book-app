@@ -33,7 +33,7 @@ describe('pickPrintFigure — 打印题卡示意图选取 (v48.2)', () => {
 
   it('v48.2 核心: 库里无 figure(列表剥离后), figureMap 懒加载到图 → 出 lazyFigure, 不用整张照', () => {
     // err 只有 imageUrl/imageBase64(整张照), 但打印页懒加载 figureMap 还原出示意图
-    const r = pickPrintFigure(PHOTO, undefined, 'data:image/png;base64,LAZYFIG')
+    const r = pickPrintFigure(PHOTO, undefined, { src: 'data:image/png;base64,LAZYFIG' })
     expect(r.kind).toBe('lazyFigure')
     expect(r.src).toBe('data:image/png;base64,LAZYFIG')
   })
@@ -43,7 +43,7 @@ describe('pickPrintFigure — 打印题卡示意图选取 (v48.2)', () => {
     const r = pickPrintFigure(
       { ...PHOTO, figureBase64: 'data:...' },
       { refined: true, figureImageUrl: '/uploads/refined.jpg', region, loading: false },
-      'data:image/png;base64,LAZYFIG',
+      { src: 'data:image/png;base64,LAZYFIG' },
     )
     expect(r.kind).toBe('refined')
     expect(r.src).toBe('/uploads/refined.jpg')
@@ -61,7 +61,7 @@ describe('pickPrintFigure — 打印题卡示意图选取 (v48.2)', () => {
   })
 
   it('什么图都没有 → none', () => {
-    const r = pickPrintFigure({ id: 'empty' }, undefined, '')
+    const r = pickPrintFigure({ id: 'empty' }, undefined, undefined)
     expect(r.kind).toBe('none')
     expect(r.src).toBeUndefined()
   })
@@ -72,8 +72,8 @@ describe('pickPrintFigure — 打印题卡示意图选取 (v48.2)', () => {
     expect(r.src).toBe('/uploads/photo.jpg')
   })
 
-  it('figureMap 值为空字符串 → 不算图, 继续兜底到 photo', () => {
-    const r = pickPrintFigure({ id: 'e2', imageUrl: '/uploads/photo.jpg' }, undefined, '')
+  it('lazyFigure 值为 null → 不算图, 继续兜底到 photo', () => {
+    const r = pickPrintFigure({ id: 'e2', imageUrl: '/uploads/photo.jpg' }, undefined, null)
     expect(r.kind).toBe('photo')
     expect(r.src).toBe('/uploads/photo.jpg')
   })
@@ -111,5 +111,21 @@ describe('pickPrintFigure — 打印题卡示意图选取 (v48.2)', () => {
     expect(r.kind).toBe('refined')
     expect(r.src).toBe('/uploads/refined.jpg')
     expect(r.region).toEqual(refinedRegion)
+  })
+
+  // ─── v48.4 新增: lazyFigure 携带 region 路径 ──────────────────────────
+  it('v48.4 核心: 库里无 figure, 懒加载到 {src, region} → 出 lazyFigure + region(走 clip-path)', () => {
+    const region = { x: 0.55, y: 0.1, w: 0.3, h: 0.4 }
+    const r = pickPrintFigure(PHOTO, undefined, { src: '/uploads/lazy-fig.jpg', region })
+    expect(r.kind).toBe('lazyFigure')
+    expect(r.src).toBe('/uploads/lazy-fig.jpg')
+    expect(r.region).toEqual(region)
+  })
+
+  it('v48.4: 懒加载到 {src} 无 region → lazyFigure 不带 region(不 clip)', () => {
+    const r = pickPrintFigure(PHOTO, undefined, { src: '/uploads/lazy-fig.jpg' })
+    expect(r.kind).toBe('lazyFigure')
+    expect(r.src).toBe('/uploads/lazy-fig.jpg')
+    expect(r.region).toBeUndefined()
   })
 })

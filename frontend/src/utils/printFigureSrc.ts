@@ -40,7 +40,13 @@ export interface FigureSrcResult {
   kind: FigureSrcKind
   /** 最终传给 <img src> 的图源(已选优先级最高的) */
   src?: string
-  /** region (refined 或 figureRegion 持久化) → 前端用 clip-path 抠 */
+  /** region (refined 或 figureRegion 持久化, 或 lazyFigure 懒加载到的 region) → 前端用 clip-path 抠 */
+  region?: { x: number; y: number; w: number; h: number }
+}
+
+/** 懒加载到的示意图(v48.4 起带 region) */
+export interface LazyFigureValue {
+  src: string
   region?: { x: number; y: number; w: number; h: number }
 }
 
@@ -49,12 +55,12 @@ export interface FigureSrcResult {
  *
  * @param err   题卡的轻量信息(figureImageUrl/figureBase64/figureRegion/imageUrl/imageBase64 都可能有值)
  * @param refined 本地 refine-map 中该 err 的状态(可能 undefined)
- * @param figureMapValue 打印页懒加载到的 figureBase64/figureImageUrl(可能 undefined/'')
+ * @param lazyFigure 打印页懒加载到的示意图(带 region, 可能 undefined)
  */
 export function pickPrintFigure(
   err: ErrorFigureInput,
   refined: FigureMapEntry | undefined,
-  figureMapValue: string | undefined,
+  lazyFigure: LazyFigureValue | null | undefined,
 ): FigureSrcResult {
   // 1) 本地 refine 成功 + 有 region → 用去手写图 + clip-path
   if (refined?.refined && refined.figureImageUrl && refined.region) {
@@ -70,9 +76,10 @@ export function pickPrintFigure(
     }
     return { kind: 'figure', src: err.figureImageUrl || err.figureBase64 }
   }
-  // 3) v48.2: 列表剥离后按需懒加载还原的 figureBase64
-  if (figureMapValue) {
-    return { kind: 'lazyFigure', src: figureMapValue }
+  // 3) v48.2/v48.4: 列表剥离后按需懒加载还原的 figureBase64/figureImageUrl
+  //    v48.4: 携带 figureRegion(后端 getErrorFigure 返回)→ lazyFigure 也走 clip-path
+  if (lazyFigure?.src) {
+    return { kind: 'lazyFigure', src: lazyFigure.src, region: lazyFigure.region }
   }
   // 4) 整张题照兜底
   if (err.imageUrl || err.imageBase64) {
