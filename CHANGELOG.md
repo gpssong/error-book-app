@@ -1,5 +1,34 @@
 # Changelog
 
+## v48.4 (2026-09-27) - 打印页示意图:lazyFigure 携带 region + 裁剪盒按 region 宽高比出高
+
+### 背景
+
+用户反馈打印预览页立方体/几何题「示意图还是不对」。v48.3 已把 clip-path 也接到 `figure` 分支(持久化 `figureRegion`),但仍漏了两条路径:
+
+1. **lazyFigure 分支丢 region**: `figureMap` 只存字符串(图 base64/URL),`pickPrintFigure` 第 3 优先级 `lazyFigure` 永远不带 region → 不 clip。这是「refine 成功写库 `figureRegion` 但 `figureImageUrl` 复用 `imageUrl`(列表剥离后懒加载还原)」这条必经路径。
+
+2. **裁剪盒出高错位**: 带 region 的 `figure` 分支误走 `object-contain`(留白)+ `max-h` → `clip-path inset%` 在留白条上裁 → 立方体图错位/缺边。
+
+### 改动
+
+| 类别 | 文件 | 内容 |
+|---|---|---|
+| **纯函数** | `frontend/src/utils/printFigureSrc.ts` | `pickPrintFigure` 第 3 优先级 `lazyFigure` 参数从 `string` 升级为 `LazyFigureValue {src, region}`;带 region 时也返回 `region` → 前端可 clip |
+| **渲染** | `frontend/src/components/PrintPreviewScreen.tsx` | `figureMap` state 从 `Record<id, string\|null>` 升级为 `Record<id, {src, region}\|null>`;懒加载 `getErrorFigure` 存 `{src, region}`;裁剪盒:任何带 region 的分支(refined/figure/lazyFigure)统一算 `clip-path inset` + `object-cover` + `aspectRatio = region.w/region.h`(盒高由宽高比决定,`maxHeight` 上限) |
+| **测试** | `frontend/src/utils/printFigureSrc.test.ts` | 更新旧用例为对象入参;新增 2 条:lazyFigure+region / lazyFigure 无 region |
+
+### 部署
+
+- 飞牛 NAS 已重新部署 v48.4 `dist`(chunk `index-M4TrxpFb.js`)
+- APK: `error-book-v48.4-fig-cliplazy.apk`(飞牛同步盘)
+
+### 已知限制
+
+- 库里 `figureRegion` 仍是空的题(refine 从未成功过)走 `photo` 兜底,打印时显示整张题照(非示意图)。需手动点「提取示意图」或在录入时重新拍摄触发 refine。
+
+---
+
 ## v48.2 (2026-09-26) - 打印页「示意图」修三处:figureBase64 不再被列表剥离 + Agnes vision 切有余量模型 + 补集法加「文字包围中央图」启发式
 
 ### 背景
