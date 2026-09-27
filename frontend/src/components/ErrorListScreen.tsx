@@ -73,9 +73,12 @@ export default function ErrorListScreen({ onNavigate }: Props) {
 
   // child / subject 变化 → 重置列表
   // v48-hotfix: 不传 loadPage 进 deps, 改用手动捕获 child/subject 的变化触发重置。
+  // v48.5: 切换 child/subject 时不再 setPageItems([]), 保留上一页数据避免闪空。
+  //        新数据拉到后由 loadPage 成功分支替换 reset=true 的 pageItems。
+  //        StrictMode 双挂载 + activeChildId 由 refreshChildren 异步 set 的时序
+  //        仍会导致 loadPage(true) 重发, ref-guard 拦截重入, 无死循环。
   useEffect(() => {
     offsetRef.current = 0
-    setPageItems([])
     setHasMore(false)
     loadPage(true)
   }, [activeChildId, filterSubject, loadPage])
