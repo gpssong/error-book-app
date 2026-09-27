@@ -1,5 +1,40 @@
 # Changelog
 
+## v48.6 (2026-09-27) - 立方体/几何题「示意图」:修数据 + 坐标护栏
+
+### 背景
+
+用户截图(2026-09-27):打印预览页「昆虫沿立方体表面爬行」题**仍显示整张题目拍摄照 / 或裁到答案文字区**,而非立方体示意图。
+
+排查(线上 Mongo + 真实图):
+- 这条题 `imageUrl = figureImageUrl = /uploads/fb8dc05f...jpeg` 是 **1159×219 宽幅条带**(一行多题拍的),立方体只是条带里一小块,左右夹着别题文字 + 3D 坐标轴 + 本题题干/选项/答案。
+- 库里原存 `figureRegion = {x:0.75, ...}` 指向**右边缘答案文字区**("8 / 10√5"),立方体根本不在框里 → 打印页 clip-path 抠出的是错的。
+- 视觉模型(agnes-2.5-flash)在这张宽幅条带上**定位不稳定**:同图两次调用分别给 `{0.65,...}` 和 `{0.746,...}`,且立方体本体在照片里就夹着 3D 坐标轴+题干文字,**物理上拿不到独立干净的立方体图**。
+
+用户接受局限:这类宽幅条带题只能"尽量显示对 + 不再显示错局部",造不出印刷级独立立方体(要彻底干净得重拍单题)。
+
+### 改动
+
+| 类别 | 文件 | 内容 |
+|---|---|---|
+| **数据修复** | 线上 DB | 把立方体题 `figureRegion` 从坏的 `{0.75}`(答案文字区)改手选为 `{0.12,0.05,0.22,0.9}`(立方体本体+顶点字母,避开右侧坐标轴/题干),裁图验证过 |
+| **后端护栏** | `backend/src/pipeline/textExtract.js` | 新增 `guardFigureRegion(region, textPositions, imgW, imgH)`:纯几何校验,拒收 ① 宽幅 strip(宽高比>3:1)上 region 宽>45% 整图(=框了大半条带)② region 主体被文字 bbox 覆盖>40%(=框到文字)。可单测 |
+| **后端接线** | `backend/src/routes/errorQuestion.js` | `refine-figure` 写库前过 `guardFigureRegion`,拒收 → `refined=false`,保留旧 region 不写坏值,前端打印页回退整条带兜底 |
+| **前端兜底** | `frontend/src/utils/printFigureSrc.ts` | 新增 `isClippableRegion(region)`:region 宽高比异常(过宽像条带 / 过窄像缝)→ `pickPrintFigure` 丢弃 region 不 clip,宁可显示整条带也不裁出错的局部 |
+| **测试** | `textExtract.test.js` + `refineFigure.test.js` + `printFigureSrc.test.ts` | 护栏 4 条 + 路由拒收 1 条 + 前端 3 条,全部通过 |
+
+### 已知局限(明确)
+
+- 宽幅条带题立方体**本身带 3D 坐标轴+周围文字**,即便 region 指对也只能"尽量显示对",非独立干净图。
+- 要彻底干净:重拍单题(用户侧行为),代码不解决。
+
+### 部署
+
+- 飞牛 NAS:backend 重建(护栏已进运行镜像,`/api/health` 200)+ 前端 dist(新 chunk `index-Dg_kGhG9.js`,webroot 安全覆盖不 `rm -rf` 挂载点 + `docker compose restart nginx`)
+- APK: `error-book-v48.6-fig-guardrails.apk`(飞牛同步盘, 内嵌 chunk `index-Dg_kGhG9.js`)
+
+---
+
 ## v48.5 (2026-09-27) - 错题历史页:切换 child/subject 不闪空 + 锁定 v48.4 打印图修复
 
 ### 背景

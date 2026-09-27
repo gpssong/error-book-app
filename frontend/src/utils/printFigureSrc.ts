@@ -36,6 +36,22 @@ export interface ErrorFigureInput {
 
 export type FigureSrcKind = 'refined' | 'figure' | 'lazyFigure' | 'photo' | 'none'
 
+/**
+ * v48.6 兜底护栏: 带 region 的图, 若 region 宽高比异常(过宽像"又框了大半条带"、
+ * 或瘦长像"文字行条带"), 宁可不 clip, 返回 null region 让上层走整条带 photo 兜底,
+ * 避免"越裁越错"。纯判断, 不改动数据。
+ *  - 宽高比 > 3.5 : 宽幅 strip 里框了大半条带(带文字), 裁出来多半是错的局部
+ *  - 宽高比 < 0.18: 异常窄(几乎是一条缝), 视觉模型定位失败的特征
+ * @returns 该 region 是否可信(可 clip)
+ */
+export function isClippableRegion(region: { x: number; y: number; w: number; h: number } | undefined | null): boolean {
+  if (!region) return false
+  const { w, h } = region
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return false
+  const ratio = w / h
+  return ratio <= 3.5 && ratio >= 0.18
+}
+
 export interface FigureSrcResult {
   kind: FigureSrcKind
   /** 最终传给 <img src> 的图源(已选优先级最高的) */
@@ -62,8 +78,14 @@ export function pickPrintFigure(
   refined: FigureMapEntry | undefined,
   lazyFigure: LazyFigureValue | null | undefined,
 ): FigureSrcResult {
+  // v48.6: 带 region 但 region 宽高比异常(看着就是文字条带) → 不 clip, 丢掉 region。
+  // 宁可显示整条带(下面各分支的 src), 也不 clip 出一个错的局部。
+  const cleanRegion = (r?: { x: number; y: number; w: number; h: number }) =>
+    isClippableRegion(r) ? r : undefined
+
   // 1) 本地 refine 成功 + 有 region → 用去手写图 + clip-path
-  if (refined?.refined && refined.figureImageUrl && refined.region) {
+  //    (缺 region 时不在此分支出图, 落到 figure 分支继续走)
+  if (refined?.refined && refined.figureImageUrl && refined.region && isClippableRegion(refined.region)) {
     return { kind: 'refined', src: refined.figureImageUrl, region: refined.region }
   }
   // 2) 库里已有 figureImageUrl / figureBase64
@@ -72,14 +94,17 @@ export function pickPrintFigure(
   //    但 region 已紧贴图形 → clip 后只显示图本身, 手写在 region 外。
   if (err.figureImageUrl || err.figureBase64) {
     if (err.figureRegion) {
-      return { kind: 'figure', src: err.figureImageUrl || err.figureBase64, region: err.figureRegion }
+      const region = cleanRegion(err.figureRegion)
+      if (region) return { kind: 'figure', src: err.figureImageUrl || err.figureBase64, region }
     }
     return { kind: 'figure', src: err.figureImageUrl || err.figureBase64 }
   }
   // 3) v48.2/v48.4: 列表剥离后按需懒加载还原的 figureBase64/figureImageUrl
   //    v48.4: 携带 figureRegion(后端 getErrorFigure 返回)→ lazyFigure 也走 clip-path
   if (lazyFigure?.src) {
-    return { kind: 'lazyFigure', src: lazyFigure.src, region: lazyFigure.region }
+    const region = cleanRegion(lazyFigure.region)
+    if (region) return { kind: 'lazyFigure', src: lazyFigure.src, region }
+    return { kind: 'lazyFigure', src: lazyFigure.src }
   }
   // 4) 整张题照兜底
   if (err.imageUrl || err.imageBase64) {

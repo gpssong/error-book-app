@@ -7,7 +7,7 @@
  *   不再 fallback 到 imageUrl(整张拍摄照)。
  */
 import { describe, it, expect } from 'vitest'
-import { pickPrintFigure, type ErrorFigureInput } from './printFigureSrc'
+import { pickPrintFigure, isClippableRegion, type ErrorFigureInput } from './printFigureSrc'
 
 const PHOTO: ErrorFigureInput = {
   id: 'e1',
@@ -127,5 +127,29 @@ describe('pickPrintFigure — 打印题卡示意图选取 (v48.2)', () => {
     expect(r.kind).toBe('lazyFigure')
     expect(r.src).toBe('/uploads/lazy-fig.jpg')
     expect(r.region).toBeUndefined()
+  })
+
+  // ─── v48.6 新增: region 宽高比异常 → 不 clip(宁可整条带, 不 clip 出错的局部) ──
+  it('v48.6: 带 region 但 region 过宽(宽高比>3.5, 像文字条带) → 出图不 clip', () => {
+    const wideRegion = { x: 0.05, y: 0.05, w: 0.9, h: 0.2 } // ratio 4.5 太宽
+    const r = pickPrintFigure(
+      { ...PHOTO, figureImageUrl: '/uploads/fig.jpg', figureRegion: wideRegion },
+      undefined, undefined,
+    )
+    expect(r.kind).toBe('figure')
+    expect(r.src).toBe('/uploads/fig.jpg')
+    expect(r.region).toBeUndefined() // 过宽 region 被丢弃, 不 clip
+  })
+
+  it('v48.6: isClippableRegion 判定', () => {
+    // 立方体典型: w/h≈1 → 可 clip
+    expect(isClippableRegion({ x: 0.1, y: 0.1, w: 0.3, h: 0.3 })).toBe(true)
+    // 异常宽(条带/文字行): w/h=9 → 拒收
+    expect(isClippableRegion({ x: 0.0, y: 0.5, w: 0.9, h: 0.1 })).toBe(false)
+    // 异常窄(一条缝): w/h=0.1 → 拒收
+    expect(isClippableRegion({ x: 0.5, y: 0.1, w: 0.1, h: 0.8 })).toBe(false)
+    // null / 非法 → false
+    expect(isClippableRegion(null)).toBe(false)
+    expect(isClippableRegion({ x: 0, y: 0, w: 0, h: 0 })).toBe(false)
   })
 })

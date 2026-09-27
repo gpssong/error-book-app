@@ -34,6 +34,11 @@ vi.mock('../middleware/auth.js', () => ({
     next()
   },
 }))
+// v48.6: 视觉兜底 mock —— 默认返回一个覆盖全幅的坏 region, 被 guard 拒收;
+// 单测里需要"正常通过"时可用 mockResolvedValueOnce 覆盖
+vi.mock('../services/minimax.js', () => ({
+  extractFigureRegion: vi.fn(async () => ({ x: 0.05, y: 0.05, w: 0.9, h: 0.9 })),
+}))
 
 let app, memoryStore
 
@@ -113,5 +118,30 @@ describe('POST /:id/refine-figure (内存模式 mock textin)', () => {
     expect(r.status).toBe(200)
     expect(r.body.refined).toBe(false)
     expect(r.body.reason).toBe('image-too-small')
+  })
+
+  // v48.6: 护栏拒收「框到文字」的坏 region → refined=false, 不写库(保留旧值)
+  it('护栏拒收 region-mostly-text → refined=false, figureRegion 不被污染', async () => {
+    const textin = await import('../services/textin.js')
+    // 让文字覆盖全幅(右半边也是文字), 使启发式/视觉给出的 region 主体是文字
+    vi.mocked(textin.recognizeText).mockReset()
+    vi.mocked(textin.recognizeText).mockResolvedValue({
+      lines: [
+        { text: 'x', position: [0.55, 0.05, 0.95, 0.05, 0.95, 0.95, 0.55, 0.95] },
+      ],
+      raw: {},
+    })
+    const minimaxMod = await import('../services/minimax.js')
+    vi.mocked(minimaxMod.extractFigureRegion).mockReset()
+    vi.mocked(minimaxMod.extractFigureRegion).mockResolvedValue({ x: 0.55, y: 0.05, w: 0.4, h: 0.9 })
+
+    const r = await request(app).post('/api/errors/err-1/refine-figure')
+    expect(r.status).toBe(200)
+    expect(r.body.refined).toBe(false)
+    expect(['region-mostly-text', 'strip-too-wide', 'no-figure-region']).toContain(r.body.reason)
+    const stored = memoryStore.errors.get('err-1')
+    expect(stored.figureRegion ?? null).toBeFalsy()
+    // 还原 mock, 避免污染后续用例
+    vi.mocked(textin.recognizeText).mockRestore()
   })
 })

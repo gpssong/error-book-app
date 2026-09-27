@@ -456,6 +456,62 @@ function unionRect(a, b) {
   return { x, y, w: x2 - x, h: y2 - y }
 }
 
+/**
+ * guardFigureRegion - 坐标合理性护栏(v48.6)
+ *
+ * 背景: 对「一行多题」的宽幅拍题条带(strip, 宽高比 4:1~10:1), 视觉模型/启发式
+ * 给出的 figureRegion 经常指到**题干文字 / 答案数字 / 3D 坐标轴**区(把文字当图),
+ * 打印页按它 clip-path 出来就是一块错的局部(用户截图"图案还是不对"的根因)。
+ * 该护栏在写库前拒收"框到文字/框了大半条带"的坏 region, 让打印页回退整条带兜底
+ * (比显示一个错的局部强)。纯几何, 无依赖, 可单测。
+ *
+ * @param {object} region  归一化 {x,y,w,h} ∈ [0,1]
+ * @param {Array<number[8]>} textPositions  TextIn 文字/公式 lines[].position(4 顶点归一化坐标)
+ * @param {number} [imgW=1]  图片宽(像素), 仅用于宽高比 strip 判定, 可省略
+ * @param {number} [imgH=1]  图片高(像素)
+ * @returns {{ok: boolean, reason?: string}}
+ *   ok=true 通过; ok=false 拒收(打印页回退整条带)
+ */
+export function guardFigureRegion(region, textPositions = [], imgW = 1, imgH = 1) {
+  if (!region || typeof region !== 'object') return { ok: false, reason: 'no-region' }
+  const { x, y, w, h } = region
+  const nx = Number(x), ny = Number(y), nw = Number(w), nh = Number(h)
+  // 坐标非法 → 拒收
+  if ([nx, ny, nw, nh].some((n) => !Number.isFinite(n))) return { ok: false, reason: 'invalid-coord' }
+  if (nw <= 0 || nh <= 0) return { ok: false, reason: 'zero-size' }
+
+  // 1) strip 感知: 宽幅条带(宽高比 > 3:1)上, region 宽占整图 > 45% = 又框了大半条带(带文字)
+  const aspect = imgH > 0 ? imgW / imgH : 1
+  if (aspect > 3 && nw > 0.45) {
+    return { ok: false, reason: 'strip-too-wide' }
+  }
+
+  // 2) 主体非文字: 统计 region 内被文字 bbox 覆盖的面积占比, > 40% 判"框到文字了"
+  if (Array.isArray(textPositions) && textPositions.length > 0) {
+    const total = nw * nh
+    let covered = 0
+    for (const p of textPositions) {
+      if (!Array.isArray(p) || p.length < 8) continue
+      // polygon 4 顶点 → axis-aligned bbox
+      const xs = [p[0], p[2], p[4], p[6]].map((v) => Math.max(0, Math.min(1, Number(v) || 0)))
+      const ys = [p[1], p[3], p[5], p[7]].map((v) => Math.max(0, Math.min(1, Number(v) || 0)))
+      const tx = Math.min(...xs), ty = Math.min(...ys)
+      const tw = Math.max(...xs) - tx, th = Math.max(...ys) - ty
+      if (tw <= 0 || th <= 0) continue
+      // 求 region ∩ 文字bbox 的交集面积
+      const ix = Math.max(nx, tx)
+      const iy = Math.max(ny, ty)
+      const ix2 = Math.min(nx + nw, tx + tw)
+      const iy2 = Math.min(ny + nh, ty + th)
+      if (ix2 > ix && iy2 > iy) covered += (ix2 - ix) * (iy2 - iy)
+    }
+    const ratio = total > 0 ? covered / total : 0
+    if (ratio > 0.4) return { ok: false, reason: 'region-mostly-text' }
+  }
+
+  return { ok: true }
+}
+
 // 辅助:round to 4 decimals(返回字符串友好,传输更短)
 function round4(n) {
   return Math.round(n * 10000) / 10000

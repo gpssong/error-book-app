@@ -4,6 +4,7 @@ import {
   trimToFirstQuestion,
   formulaSanityCheck,
   figureRegionFromTextPositions,
+  guardFigureRegion,
   KP_KEYWORDS,
 } from './textExtract.js'
 
@@ -288,6 +289,46 @@ describe('figureRegionFromTextPositions — v47 后端 fallback', () => {
     // region 必须落在 [0,1] 归一化内
     expect(r.x).toBeGreaterThanOrEqual(0)
     expect(r.x + r.w).toBeLessThanOrEqual(1.001)
+  })
+})
+
+describe('guardFigureRegion (v48.6 坐标护栏)', () => {
+  it('无 region / 坐标非法 → 拒收', () => {
+    expect(guardFigureRegion(null)).toEqual({ ok: false, reason: 'no-region' })
+    expect(guardFigureRegion({ x: 0, y: 0, w: 0, h: 0.5 }).reason).toBe('zero-size')
+    expect(guardFigureRegion({ x: NaN, y: 0, w: 1, h: 1 }).reason).toBe('invalid-coord')
+  })
+
+  it('主体是文字(region 内文字覆盖 > 40%) → 拒收', () => {
+    // 一整行文字横贯中部, region 正好框住这行文字
+    const textLines = [
+      { position: [0.6, 0.15, 0.9, 0.15, 0.9, 0.3, 0.6, 0.3] },
+      { position: [0.6, 0.35, 0.95, 0.35, 0.95, 0.5, 0.6, 0.5] },
+      { position: [0.6, 0.55, 0.9, 0.55, 0.9, 0.7, 0.6, 0.7] },
+    ]
+    const positions = textLines.map((l) => l.position)
+    // 立方体题实测坏 region: 框在右边缘答案文字区 {0.75,0.15,0.22,0.5}
+    const bad = { x: 0.75, y: 0.15, w: 0.22, h: 0.5 }
+    const guard = guardFigureRegion(bad, positions, 1, 1)
+    expect(guard.ok).toBe(false)
+    expect(guard.reason).toBe('region-mostly-text')
+  })
+
+  it('干净图区(region 内几乎无文字) → 通过', () => {
+    // 文字集中在左半边, region 框右半边(图区)
+    const positions = [
+      [0, 0.05, 0.4, 0.05, 0.4, 0.95, 0, 0.95], // 左侧整条文字
+    ]
+    const good = { x: 0.55, y: 0.1, w: 0.35, h: 0.8 }
+    expect(guardFigureRegion(good, positions, 1, 1).ok).toBe(true)
+  })
+
+  it('strip 上框了大半条带(宽 > 45%) → 拒收', () => {
+    const positions = [] // 即使无文字, strip 太宽也拒收
+    const tooWide = { x: 0.2, y: 0.1, w: 0.6, h: 0.8 }
+    expect(guardFigureRegion(tooWide, positions, 1000, 200).reason).toBe('strip-too-wide')
+    // 非 strip(正常图)同样宽度则放行
+    expect(guardFigureRegion(tooWide, positions, 300, 300).ok).toBe(true)
   })
 })
 

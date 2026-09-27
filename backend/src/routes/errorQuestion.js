@@ -12,7 +12,7 @@ import memoryStore from '../schemas/memory.js'
 import { createMemoryError } from '../schemas/errorQuestion.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { isTextInConfigured, eraseHandwriting, recognizeText } from '../services/textin.js'
-import { figureRegionFromTextPositions } from '../pipeline/textExtract.js'
+import { figureRegionFromTextPositions, guardFigureRegion } from '../pipeline/textExtract.js'
 import { v4 as uuidv4 } from 'uuid'
 import path from 'path'
 import fs from 'fs'
@@ -380,6 +380,22 @@ router.post('/:id/refine-figure', async (req, res) => {
     }
     if (!region) {
       return res.json({ refined: false, reason: 'no-figure-region' })
+    }
+
+    // v48.6 坐标护栏: 拒收"框到文字 / 框了大半条带"的坏 region, 避免打印页 clip 出错的局部。
+    // 用已算出的 positions(TextIn 文字+公式 bbox)判断 region 主体是否为文字。
+    // 图片宽高比在 refine 场景拿不到精确像素(不做图像解码), 传 imgW=1/imgH=1 跳过 strip 判,
+    // 只做「主体非文字」这条核心校验 —— 这是"框到答案文字区"这类坏 region 的必经拦截。
+    // 拒收 → refined=false, 库里保留旧 region(不写坏值), 前端打印页回退整条带兜底。
+    const guard = guardFigureRegion(region, positions, 1, 1)
+    if (!guard.ok) {
+      console.warn(`[refine-figure] 护栏拒收 region (${guard.reason}): ${JSON.stringify(region)} → 保留旧值, 不写库`)
+      return res.json({
+        refined: false,
+        reason: guard.reason,
+        region: null,
+        bboxCount: positions.length,
+      })
     }
 
     // v48.3: eraseHandwriting 成功 → 用去手写后的图落盘
