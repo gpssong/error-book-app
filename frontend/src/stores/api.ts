@@ -148,7 +148,8 @@ export interface ErrorItem {
   // v44: 图片静态化 —— 插图落盘 /uploads 后的 URL(可缓存); 迁移后 figureBase64 清空
   figureImageUrl?: string
   // v48.3: refine-figure 持久化的 region, 让打印页 export 走 clip-path, 不必每次 refine
-  figureRegion?: { x: number; y: number; w: number; h: number }
+  // v48.7.1: null = 用户显式"此题不出图"(打印页不显示示意图也不显示整张题照)
+  figureRegion?: { x: number; y: number; w: number; h: number } | null
   createdAt: string
   updatedAt: string
 }

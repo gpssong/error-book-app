@@ -152,4 +152,37 @@ describe('pickPrintFigure — 打印题卡示意图选取 (v48.2)', () => {
     expect(isClippableRegion(null)).toBe(false)
     expect(isClippableRegion({ x: 0, y: 0, w: 0, h: 0 })).toBe(false)
   })
+
+  // ─── v48.7.1 新增: 显式不出图(suppressImage=true → 连整张题照也不出, 题卡只剩文字) ──
+  it('v48.7.1: suppressImage=true → 即便有 figure+region / 有整张题照, 也返回 none', () => {
+    const r = pickPrintFigure(
+      { ...PHOTO, figureImageUrl: '/uploads/fig.jpg', figureRegion: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 } },
+      undefined,
+      undefined,
+      true,
+    )
+    expect(r.kind).toBe('none')
+    expect(r.src).toBeUndefined()
+  })
+
+  it('v48.7.1: suppressImage=true 优先于 refine(本地优化图也不出)', () => {
+    const r = pickPrintFigure(
+      { ...PHOTO },
+      { refined: true, figureImageUrl: '/uploads/refined.jpg', region: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 }, loading: false },
+      undefined,
+      true,
+    )
+    expect(r.kind).toBe('none')
+  })
+
+  it('v48.7.1: suppressImage=false/缺省 + figureRegion=null(显式不裁) 但仍有整张题照 → 走 photo 兜底', () => {
+    // figureRegion 为 null 时, 出图优先级不变: 有 figure 走 figure, 否则 photo
+    const r = pickPrintFigure(
+      { id: 'e', imageUrl: '/uploads/photo.jpg' },
+      undefined,
+      undefined,
+      false,
+    )
+    expect(r.kind).toBe('photo')
+  })
 })

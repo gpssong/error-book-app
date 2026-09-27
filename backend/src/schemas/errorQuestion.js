@@ -64,6 +64,7 @@ export const errorQuestionSchema = new mongoose.Schema(
     figureImageUrl: { type: String, default: '' },
     // v48.3: refine-figure 持久化的归一化 region {x,y,w,h}, 让打印页走 clip-path,
     // 即使没在当前 session 重新 refine 也能精确显示示意图部分(eraseHandwriting 失败时关键)
+    // v48.7: 默认 undefined(= 无 region 不 clip); 用户可显式传 null 让该题"不显示示意图"(退回整张题照)
     figureRegion: {
       type: { x: Number, y: Number, w: Number, h: Number },
       default: undefined,

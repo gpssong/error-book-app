@@ -29,7 +29,8 @@ export interface ErrorFigureInput {
   figureImageUrl?: string
   figureBase64?: string
   /** v48.3: refine-figure 持久化的 region, 即便没重新 refine 也走 clip-path */
-  figureRegion?: { x: number; y: number; w: number; h: number }
+  /** v48.7.1: null = 用户显式"此题不出图" → 上层传 suppressImage=true, 不示意图也不整张题照 */
+  figureRegion?: { x: number; y: number; w: number; h: number } | null
   imageUrl?: string
   imageBase64?: string
 }
@@ -77,7 +78,12 @@ export function pickPrintFigure(
   err: ErrorFigureInput,
   refined: FigureMapEntry | undefined,
   lazyFigure: LazyFigureValue | null | undefined,
+  /** v48.7.1: 显式"此题不出图" — true 时直接返回 kind:'none', 连整张题照兜底也跳过, 打印页只剩文字题干 */
+  suppressImage?: boolean,
 ): FigureSrcResult {
+  // v48.7.1: 显式不出图 → 最高优先级, 直接 none(不示意图 / 不整张题照)
+  if (suppressImage) return { kind: 'none' }
+
   // v48.6: 带 region 但 region 宽高比异常(看着就是文字条带) → 不 clip, 丢掉 region。
   // 宁可显示整条带(下面各分支的 src), 也不 clip 出一个错的局部。
   const cleanRegion = (r?: { x: number; y: number; w: number; h: number }) =>
@@ -92,11 +98,13 @@ export function pickPrintFigure(
   //    v48.3: 若 err.figureRegion 也存在(持久化的 region), 同样走 clip-path。
   //    这是 eraseHandwriting 失败的关键路径: figureImageUrl = imageUrl(原照),
   //    但 region 已紧贴图形 → clip 后只显示图本身, 手写在 region 外。
+  //    v48.7: err.figureRegion === null → 用户显式"此题不显示示意图" → 跳过 clip, 走整张题照兜底。
   if (err.figureImageUrl || err.figureBase64) {
     if (err.figureRegion) {
       const region = cleanRegion(err.figureRegion)
       if (region) return { kind: 'figure', src: err.figureImageUrl || err.figureBase64, region }
     }
+    // region 为 null(用户显式不 clip) → 出图但不带 region, 让上层显示整条带
     return { kind: 'figure', src: err.figureImageUrl || err.figureBase64 }
   }
   // 3) v48.2/v48.4: 列表剥离后按需懒加载还原的 figureBase64/figureImageUrl

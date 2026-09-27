@@ -1,5 +1,40 @@
 # Changelog
 
+## v48.7 (2026-09-27) - 打印题卡「不出图」开关:figureRegion=null = 彻底不显示原图
+
+### 背景
+
+v48.6 之后,宽幅条带(一行多题拍)的立方体/几何题仍无解:源照片就是一条横条,立方体夹在「别题文字 + 3D 坐标轴 + 题干/选项/答案」中间,**物理上拿不到独立干净的立方体图**。视觉模型定位不稳,refine 出来要么裁到文字要么整条带,效果太差。
+
+用户明确:「效果太差,放弃示意图放入题目的方案」+「打印预览中的原题图不要显示了」。
+
+诉求升级为:这类题打印时**连整张原题照也不显示**,题卡只留文字题干。
+
+### 改动
+
+| 类别 | 文件 | 内容 |
+|---|---|---|
+| **数据修复** | 线上 DB | 立方体/几何题 `6ab88d6eb6d4de7654acc7a4`(立方体木块表面昆虫爬行)设 `figureRegion: null` + 清空 `figureBase64/figureImageUrl`(`imageUrl` 保留),显式标记"此题不出图" |
+| **语义** | `figureRegion` 三态 | `undefined`(老数据)= 照常 auto-refine/示意图;`{x,y,w,h}` = clip 示意图;**`null` = 显式不出图**(v48.7 起升级:不只"不裁剪",连整张题照兜底也跳过) |
+| **前端核心** | `frontend/src/utils/printFigureSrc.ts` | `pickPrintFigure` 加第 4 参数 `suppressImage`:`true` 直接返回 `kind:'none'`,跳过 figure/lazyFigure/photo 全部分支 |
+| **前端渲染** | `frontend/src/components/PrintPreviewScreen.tsx` | 懒加载检测 `figureRegion===null` → `figureMap` 存 `{suppressed:true}` + 清空 `src` + 跳过 auto-refine;渲染处把 `suppressImage` 传入 `pickPrintFigure` |
+| **类型** | `frontend/src/stores/api.ts` | `ErrorItem.figureRegion` 类型放行为 `... \| null` |
+| **后端接线** | `backend/src/routes/errorQuestion.js` | `/figure` 两处 `figureRegion` 改 `?? null`(保留显式 `null`,不被 `\|\|` 吃掉);memory/mongo 双路径一致 |
+| **schema 注释** | `backend/src/schemas/errorQuestion.js` | `figureRegion` 补 v48.7 注释(默认 undefined=不 clip;可显式传 null=不出图) |
+| **测试** | `frontend/src/utils/printFigureSrc.test.ts` | 加 3 条 `suppressImage` 回归(suppress 覆盖 figure+region / 覆盖 refine / false 时仍走 photo) |
+
+### 影响范围
+
+- **只有显式 `figureRegion: null` 的题**彻底不出图;`undefined`(老数据)的题走原有示意图/整张照逻辑,不受影响。
+- 想给某道题关图:把该 doc `figureRegion` 设 `null`(mongo 存 null);想恢复出图:设回 `{...}` 或 `undefined`。
+
+### 部署
+
+- 前端 dist(新 chunk `index-BAlXkzNF.js`,webroot `rm -rf assets` 安全覆盖 + `docker compose restart nginx`),`/api/health` 200
+- 后端 `?? null` 改动已入库(运行中容器下次重建镜像生效;当前 `/figure` 对该题已返回 `figureRegion: null` 因数据本身即 null)
+
+---
+
 ## v48.6 (2026-09-27) - 立方体/几何题「示意图」:修数据 + 坐标护栏
 
 ### 背景

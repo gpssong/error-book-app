@@ -137,7 +137,7 @@ router.get('/:id/figure', async (req, res) => {
       return res.json({
         figureImageUrl: err.figureImageUrl || '',
         figureBase64: err.figureBase64 || '',
-        figureRegion: err.figureRegion || null,
+        figureRegion: err.figureRegion ?? null,
       })
     }
     const err = await ErrorQuestion.findById(req.params.id)
@@ -147,7 +147,7 @@ router.get('/:id/figure', async (req, res) => {
     return res.json({
       figureImageUrl: err.figureImageUrl || '',
       figureBase64: err.figureBase64 || '',
-      figureRegion: err.figureRegion || null,
+      figureRegion: err.figureRegion ?? null,
     })
   } catch (err) {
     console.error('[figure] 异常:', err)

@@ -47,7 +47,8 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
   // v48.4: 同时保存 figureRegion(getErrorFigure 返回), 让 pickPrintFigure 的 lazyFigure
   // 分支也能走 clip-path 抠图 — 这是"图在库里已 refine 过但 figureImageUrl 空"的题
   // (refine 写 figureRegion 但 figureImageUrl 复用 imageUrl, 列表剥离后需懒加载还原) 的必经路径。
-  const [figureMap, setFigureMap] = useState<Record<string, { src: string; region?: { x: number; y: number; w: number; h: number } } | null>>({})
+  // v48.7.1: suppressed=true 表示该题 figureRegion===null(显式不出图), pickPrintFigure 直接 none
+  const [figureMap, setFigureMap] = useState<Record<string, { src: string; region?: { x: number; y: number; w: number; h: number }; suppressed?: boolean } | null>>({})
   // 输入框用字符串暂存, 避免 "01" 这类前导零被数字态吞掉; 提交时解析
   const [similarCountInput, setSimilarCountInput] = useState<string>(String(DEFAULT_SIMILAR_COUNT))
   // v30: 随机练习模式
@@ -76,22 +77,29 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
       for (const id of missing) {
         if (cancelled) return
         let src = ''
+        // v48.7.1: figureRegion null = 显式"此题不出图" → 跳过 auto-refine, 且不出任何图
+        // undefined = 库里没该字段(老数据) → 仍走 auto-refine
         let region: { x: number; y: number; w: number; h: number } | undefined
+        let suppressed = false
         try {
           const f = await api.getErrorFigure(id)
           src = f.figureBase64 || f.figureImageUrl || ''
-          region = f.figureRegion || undefined
+          if (f.figureRegion === null) {
+            suppressed = true
+            src = ''
+            region = undefined
+          } else {
+            region = f.figureRegion || undefined
+          }
         } catch {
           /* 拉图失败, 继续走 refine */
         }
-        // v48.2: 库里没示意图的题(figureBase64/figureImageUrl 都空) → 自动调 refine-figure 出图
-        // refine 后端: 启发式(TextIn bbox)提不出时, 视觉模型(agnes-2.5-flash)兜底找图 bbox。
-        // 成功后写 refineMap, 渲染走 clip-path; 失败则保持题照兜底(用户仍可手动点「提取示意图」)。
-        if (!src) {
+        // v48.2: 库里没示意图的题(figureBase64/figureImageUrl 都空) 且非显式不出图 → 自动 refine
+        if (!src && !suppressed) {
           handleRefine(id) // fire-and-forget; 结果进 refineMap, 不影响 figureMap 渲染
         }
         if (cancelled) return
-        setFigureMap((m) => ({ ...m, [id]: src ? { src, region } : null }))
+        setFigureMap((m) => ({ ...m, [id]: suppressed ? { src: '', suppressed: true } : (src ? { src, region } : null) }))
       }
     })()
     return () => { cancelled = true }
@@ -409,7 +417,10 @@ export default function PrintPreviewScreen({ onNavigate }: Props) {
                            - 用户可点「图不全?点此优化」调后端 refine 重算 */}
                         {(() => {
                           const refined = refineMap[err.id]
-                          const fig = pickPrintFigure(err, refined, figureMap[err.id] ?? undefined)
+                          const lazy = figureMap[err.id]
+                          // v48.7.1: 显式不出图(figureRegion===null) → pickPrintFigure 直接 none, 题卡只剩文字
+                          const suppressImage = lazy?.suppressed === true || err.figureRegion === null
+                          const fig = pickPrintFigure(err, refined, lazy ?? undefined, suppressImage)
                           if (fig.kind === 'none') return null
                           // region → clip-path inset
                           // refined(本次 session 去手写成功) / figure(库里 figureImageUrl + 持久化 figureRegion)
