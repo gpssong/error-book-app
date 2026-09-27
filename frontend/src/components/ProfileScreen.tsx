@@ -223,7 +223,7 @@ export default function ProfileScreen({ onNavigate }: Props) {
           退出登录
         </button>
 
-        <p className="text-center text-[11px] text-slate-300 pb-4">错题本 v2.0 · Sapiens AI</p>
+        <p className="text-center text-[11px] text-slate-300 pb-4">错题本 v{import.meta.env.APP_VERSION} · Sapiens AI</p>
       </div>
 
       {/* 付费升级弹窗 */}

@@ -2,8 +2,12 @@ import { defineConfig, type HtmlTagDescriptor, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
+import { readFileSync } from 'node:fs'
 
 import siteConfiguration from './.figma/make/site.json'
+
+// 前端展示版本号 — 取自 package.json, 每次 build 自动跟随(避免写死在组件里)
+const APP_VERSION = (JSON.parse(readFileSync(path.resolve(__dirname, './package.json'), 'utf-8')).version as string) || '0.0.0'
 
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -12,6 +16,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: process.env.FIGMA_PUBLIC_URL ? `${process.env.FIGMA_PUBLIC_URL}/` : '/',
+    define: {
+      // 组件里用 import.meta.env.APP_VERSION 读真实版本(随 package.json 更新)
+      'import.meta.env.APP_VERSION': JSON.stringify(APP_VERSION),
+    },
     build: {
       sourcemap: emitSourcemaps ? 'inline' : false,
       minify: !emitSourcemaps,
