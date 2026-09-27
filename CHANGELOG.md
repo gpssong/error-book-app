@@ -1,5 +1,48 @@
 # Changelog
 
+## v48.8 (2026-09-27) - AI 讲解「出错时怎么救」:L1 失败可见 + L2 质量纠错 + L3 离线兜底
+
+### 背景
+
+用户截图:AI 讲解页「题目出错时静默无反馈」——`handleAnalyze` 的 `catch` 只 `console.error`,额度耗尽 / 超时 / API 500 时用户**看不到任何提示**,只能傻等。即便讲解出来了,若数值算错(如跳楼机 `24 m/s`),也没有入口标记"讲错了"让 AI 重讲。
+
+三层恢复方案一次做完:
+
+### L1 — 失败可见(讲解报错不再静默)
+
+| 文件 | 内容 |
+|---|---|
+| `frontend/src/components/ErrorDetailScreen.tsx` | `aiError` state + `classifyAiError`(额度→升级提示 / 超时→重试 / 通用);讲解区顶部红色错误条,含 **[重新讲解]**(带 note 重跑)+ **[忽略]** |
+| `frontend/src/components/ErrorDetailScreen.tsx` | 引入 `emitPaywall`,额度墙(402)时顺手触发升级弹窗 |
+| `backend/src/routes/ai.js` | `/analyze` 接 `userNote` 并拼进 prompt("请重点核对并修正被指出的部分") |
+
+### L2 — 质量纠错(讲解完成后反馈)
+
+| 文件 | 内容 |
+|---|---|
+| `frontend/src/components/ErrorDetailScreen.tsx` | `aiVerdict/aiWrongType` state;最后一步下方「这个讲解对吗? 👍 正确 / 👎 有误」;👎 展开 `答案错 / 步骤错 / 看不懂` chip,点「针对{类型}重新讲解」带 note 重跑 |
+| `frontend/src/stores/api.ts` | `analyzeError` 加 `userNote` 入参;`ErrorItem` 加 `aiFeedback` 字段(`{wrong, type, note, at}`),存盘供家长端/统计监控讲解被纠正率 |
+
+### L3 — 离线兜底
+
+| 文件 | 内容 |
+|---|---|
+| `frontend/src/components/ErrorDetailScreen.tsx` | 无真实结果且非报错时,显示本地预置占位 + 「离线占位讲解(联网后可生成真实 AI 讲解)」标注 |
+
+### 验证
+
+- `frontend` `tsc --noEmit` 通过;前端测试 37/37;后端测试 70/70;`ai.js` `node -c` 通过
+- bundle 内确认 `重新讲解`/`这个讲解对吗`/`aiFeedback`/`答案错` 均在 `index-EjVm84TH.js`
+- 部署:前端 webroot + `docker compose restart nginx`(health 200,新 chunk 200);后端 `ai.js` 单文件覆盖 + `docker compose build backend`(运行容器 grep `userNote`=2,health 200)
+
+### 部署说明
+
+- 前端:`index-EjVm84TH.js`(618KB)已上 webroot;旧 chunk 404。
+- 后端:仅改 `ai.js` 一个文件,已重建镜像并重启 backend;`checkDailyLimit`/quota 逻辑未动。
+- 出 APK:`cap sync` 后 `android/app/src/main/assets/public` 已含新 bundle(需本地重新 `gradlew assembleDebug` 出包)。
+
+---
+
 ## v48.7 (2026-09-27) - 打印题卡「不出图」开关:figureRegion=null = 彻底不显示原图
 
 ### 背景

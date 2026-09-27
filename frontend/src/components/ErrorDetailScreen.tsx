@@ -13,7 +13,7 @@ import { Icon, SubjectTag } from '@/components/Icons'
 import DrawingCanvas from '@/components/DrawingCanvas'
 import LatexPreview from '@/components/LatexPreview'
 import type { ErrorItem, SimilarQuestion, AIAnalysisResult } from '@/stores/api'
-import api, { resolveImageUrl } from '@/stores/api'
+import api, { resolveImageUrl, emitPaywall } from '@/stores/api'
 
 type Screen = 'dashboard' | 'childManage' | 'errorList' | 'errorDetail' | 'printPreview' | 'camera'
 type TabKey = 'detail' | 'ai' | 'similar'
@@ -85,10 +85,31 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
     }
   }, [err?.id])
 
+  // L2: 讲解质量纠错 — 用户在讲解完成后反馈"对/不对"
+  const [aiVerdict, setAiVerdict] = useState<'correct' | 'wrong' | null>(null)
+  // L2: "讲解有误"时展开的具体问题 chip(答案错/步骤错/看不懂), 作为重讲解的 userNote
+  const [aiWrongType, setAiWrongType] = useState<string | null>(null)
+  // L1: 失败可见 — analyzeError/save 抛错时存 message, 讲解区顶部弹错误条
+  const [aiError, setAiError] = useState<string | null>(null)
+
+  // L1: 把后端错误归一化为可读文案 + 是否为额度墙(→ 引导升级)
+  const classifyAiError = (e: unknown): { msg: string; paywall: boolean } => {
+    const m = (e as { message?: string })?.message || '网络或服务异常'
+    const msg = String(m)
+    const paywall =
+      /额度已用完|次数已用完|今日次数已用完|_daily_limit_exceeded|升级\s*Pro/i.test(msg)
+    if (paywall) return { msg: '今日 AI 讲解次数已用完，升级 Pro 享无限讲解', paywall: true }
+    if (/timeout|超时|abort/i.test(msg)) return { msg: '网络较慢，AI 讲解超时，请重试', paywall: false }
+    return { msg: `AI 讲解失败：${msg}，请重试`, paywall: false }
+  }
+
   // ─── AI 讲解逻辑(所有 hooks 必须放在早返回之前,保证 hook 顺序稳定) ────────
-  const handleAnalyze = useCallback(async () => {
+  const handleAnalyze = useCallback(async (opts?: { note?: string }) => {
     if (!err) return
     setAiLoading(true)
+    setAiError(null)
+    setAiVerdict(null)
+    setAiWrongType(null)
     try {
       const result = await api.analyzeError({
         title: err.title,
@@ -98,8 +119,10 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
         sourceText: err.sourceText,        // 语文题把诗词原文/阅读文章也带上,讲解更准
         figureBase64: fullFigureBase64 || err.figureBase64 || undefined,  // v44: 全量详情补齐的插图 base64
         childId: err.childId,
+        userNote: opts?.note || undefined,  // L2: 用户纠错备注, 后端并入 prompt 重讲解
       })
       setAiResult(result)
+      setAiStep(0)
       await api.saveAiAnalysis(err.id, {
         mistakeReason: result.mistakeReason,
         knowledgeExplained: result.knowledgeExplained,
@@ -109,9 +132,28 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
       await updateError(err.id, { aiAnalyzed: true, aiAnalysis: { ...result, analyzedAt: new Date().toISOString() } })
     } catch (e) {
       console.error('AI 分析失败:', e)
+      const c = classifyAiError(e)
+      setAiError(c.msg)
+      if (c.paywall) emitPaywall({ message: c.msg } as never) // 引导升级弹窗
     } finally {
       setAiLoading(false)
     }
+  }, [err, updateError])
+
+  // L2: 用户标记讲解有问题(答案错/步骤错/看不懂) → 存盘 aiFeedback + 可一键带 note 重讲
+  const handleAiWrong = useCallback((type: string) => {
+    setAiVerdict('wrong')
+    setAiWrongType(type)
+    if (!err) return
+    const note = `用户反馈讲解有误（类型：${type}），请重点核对并修正该部分`
+    // 存盘: aiFeedback 记录讲解被纠正(家长端/统计可监控); 失败静默忽略
+    updateError(err.id, { aiFeedback: { wrong: true, type, note, at: new Date().toISOString() } } as never).catch(() => {})
+  }, [err, updateError])
+
+  const handleAiCorrect = useCallback(() => {
+    if (!err) return
+    setAiVerdict('correct')
+    updateError(err.id, { aiFeedback: { wrong: false, at: new Date().toISOString() } } as never).catch(() => {})
   }, [err, updateError])
 
   const handleGenerateSimilar = useCallback(async () => {
@@ -410,7 +452,7 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
               </div>
               <div className="flex gap-2">
                 <button
-                  onClick={handleAnalyze}
+                  onClick={() => handleAnalyze()}
                   disabled={aiLoading}
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold"
                   style={{ background: '#EFF6FF', color: '#2563EB' }}
@@ -418,13 +460,42 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
                   <Icon.Speak /> {aiLoading ? '分析中...' : '开始AI讲解'}
                 </button>
                 <button
-                  onClick={() => { setAiStep(0); setAiResult(null); }}
+                  onClick={() => { setAiStep(0); setAiResult(null); setAiError(null); setAiVerdict(null); setAiWrongType(null); }}
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold"
                   style={{ background: '#F1F5F9', color: '#64748B' }}
                 >
                   <Icon.Refresh /> 重置
                 </button>
               </div>
+
+              {/* L1: 失败可见 — 讲解报错时顶部错误条 + 一键重讲 */}
+              {aiError && (
+                <div
+                  className="mt-3 flex items-start gap-2 p-3 rounded-xl"
+                  style={{ background: '#FEF2F2', color: '#B91C1C' }}
+                >
+                  <span className="text-sm shrink-0">⚠️</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold leading-relaxed">{aiError}</p>
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={() => handleAnalyze(aiWrongType ? { note: `用户反馈讲解有误（类型：${aiWrongType}），请重点核对并修正` } : undefined)}
+                        className="text-xs font-bold text-white px-3 py-1.5 rounded-lg active:scale-95"
+                        style={{ background: '#B91C1C' }}
+                      >
+                        重新讲解
+                      </button>
+                      <button
+                        onClick={() => setAiError(null)}
+                        className="text-xs font-bold px-3 py-1.5 rounded-lg"
+                        style={{ background: '#F1F5F9', color: '#64748B' }}
+                      >
+                        忽略
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="space-y-3">
@@ -485,6 +556,72 @@ export default function ErrorDetailScreen({ onErrorId, errorId }: Props) {
               >
                 🎯 查看同类练习题
               </button>
+            )}
+
+            {/* L2: 讲解完成后质量纠错 — 对/不对, 不对可标记具体问题并重讲 */}
+            {aiResult && aiStep === 2 && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <p className="text-xs font-bold text-slate-600 mb-2">
+                  {aiVerdict === 'correct' ? '✅ 已确认讲解正确' : '这个讲解对吗？'}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleAiCorrect}
+                    disabled={aiVerdict === 'correct'}
+                    className="flex-1 py-2.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-60"
+                    style={{ background: aiVerdict === 'correct' ? '#10B981' : '#F1F5F9', color: aiVerdict === 'correct' ? '#fff' : '#10B981' }}
+                  >
+                    👍 正确
+                  </button>
+                  <button
+                    onClick={() => handleAiWrong(aiWrongType || '步骤错')}
+                    disabled={aiVerdict === 'wrong'}
+                    className="flex-1 py-2.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-60"
+                    style={{ background: aiVerdict === 'wrong' ? '#EF4444' : '#F1F5F9', color: aiVerdict === 'wrong' ? '#fff' : '#EF4444' }}
+                  >
+                    👎 有误
+                  </button>
+                </div>
+                {aiVerdict === 'wrong' && (
+                  <>
+                    <p className="text-[10px] font-bold text-slate-400 mt-3 mb-1.5">错在哪？（标记后点「重新讲解」让 AI 针对性修正）</p>
+                    <div className="flex flex-wrap gap-2">
+                      {['答案错', '步骤错', '看不懂'].map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setAiWrongType(t)}
+                          className="text-xs font-bold px-3 py-1.5 rounded-full transition-colors"
+                          style={{
+                            background: aiWrongType === t ? '#EF4444' : '#FFF7ED',
+                            color: aiWrongType === t ? '#fff' : '#EA580C',
+                            outline: aiWrongType === t ? 'none' : '1px solid #FED7AA',
+                            outlineOffset: '-1px',
+                          }}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => handleAnalyze({ note: `用户反馈讲解有误（类型：${aiWrongType}），请重点核对并修正该部分` })}
+                      className="w-full mt-3 py-2.5 rounded-xl text-xs font-extrabold text-white active:scale-[0.98] transition-transform"
+                      style={{ background: '#EF4444' }}
+                    >
+                      🔄 针对「{aiWrongType}」重新讲解
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* L3: 无真实结果且非报错 → 本地预置占位讲解, 标灰注明离线占位 */}
+            {!aiResult && !aiError && !aiLoading && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-lg">📖</span>
+                  <p className="text-xs font-bold text-slate-400">离线占位讲解（联网后可生成真实 AI 讲解）</p>
+                </div>
+              </div>
             )}
           </div>
         )}

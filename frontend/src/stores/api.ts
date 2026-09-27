@@ -137,6 +137,8 @@ export interface ErrorItem {
     answer?: string
     analyzedAt: string | null
   }
+  // L2: 用户对 AI 讲解质量的反馈(讲解被纠正/确认), 家长端可据此监控讲解准确率
+  aiFeedback?: { wrong: boolean; type?: string; note?: string; at: string }
   similarQuestions?: SimilarQuestion[]
   // v40: 跨页拍题标记（同一道题由 2 张拍图拼成，单条记录 + splitGroupId 关联）
   isSplitPage?: boolean
@@ -280,7 +282,7 @@ const api = {
     request<{ figureImageUrl: string; figureBase64: string; figureRegion?: { x: number; y: number; w: number; h: number } | null }>(`/errors/${id}/figure`),
 
   // ─── AI 服务 ────────────────────────────────────────────────────────────────
-  analyzeError: (data: { title: string; knowledgePoint: string; subject: string; textContent?: string; sourceText?: string; childId?: string; figureBase64?: string }) =>
+  analyzeError: (data: { title: string; knowledgePoint: string; subject: string; textContent?: string; sourceText?: string; childId?: string; figureBase64?: string; userNote?: string }) =>
     request<AIAnalysisResult>('/ai/analyze', { method: 'POST', body: JSON.stringify(data) }),
   generateSimilar: (data: { title: string; knowledgePoint: string; subject: string; difficulty?: string; textContent?: string; sourceText?: string; childId?: string; figureBase64?: string }) =>
     request<{ questions: SimilarQuestion[] }>('/ai/similar', { method: 'POST', body: JSON.stringify(data) }),

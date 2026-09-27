@@ -186,7 +186,7 @@ router.use(authMiddleware)
 
 router.post('/analyze', checkDailyLimit({ action: 'ai_analyze' }), async (req, res) => {
   try {
-    const { title, knowledgePoint, subject, textContent, sourceText, childId, figureBase64 } = req.body
+    const { title, knowledgePoint, subject, textContent, sourceText, childId, figureBase64, userNote } = req.body
 
     // 反查 child grade (用于讲解更贴近学段)
     let childGrade = null
@@ -203,7 +203,7 @@ router.post('/analyze', checkDailyLimit({ action: 'ai_analyze' }), async (req, r
 题目：${title}
 知识点：${knowledgePoint}
 题目内容：${textContent || '（见图片）'}
-${figureBase64 ? `\n题目插图：已在消息中附带本题关键示意图,请结合图片讲解。\n` : ''}${sourceText ? `\n诗词原文/阅读文章原文：\n${sourceText}\n` : ''}
+${userNote ? `\n【用户纠错反馈】${userNote}\n请重点核对并修正被指出的部分, 重新给出准确讲解。\n` : ''}${figureBase64 ? `\n题目插图：已在消息中附带本题关键示意图,请结合图片讲解。\n` : ''}${sourceText ? `\n诗词原文/阅读文章原文：\n${sourceText}\n` : ''}
 ${gradePrompt}
 
 请按以下JSON格式返回分析结果（不要有其他文字）：
